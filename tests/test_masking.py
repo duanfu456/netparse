@@ -226,6 +226,11 @@ def test_l2_shape():
     eq("B9 长十六进制小写串不命中（2 类字符）",
        M.is_secret_shape("5d41402abc4b2a76b9719d911017c592"), False)
 
+    eq("B9a 纯拼音长描述不命中",
+       M.is_secret_shape("didianZCWanYaoBaoCaiYou35KVBian"), False)
+    eq("B9b 多样无分隔符密文仍命中",
+       M.is_secret_shape("A1b2C3d4E5f6G7h8I9j0K1l2"), True)
+
     # 漏标 → 兜底遮蔽
     res = parse(TPL_PEER_PLAIN, CFG_PEER_WITH)
     eq("B10 模板漏标时兜底遮蔽生效",

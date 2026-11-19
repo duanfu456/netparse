@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 from netparse.adapters.incumbent import MAPPING_SPEC, to_incumbent_shape  # noqa: E402
+import netparse.adapters.incumbent as adapter  # noqa: E402
 
 FAILURES = []
 PASSED = 0
@@ -212,9 +213,10 @@ SAMPLES = {
          "interfaces": [{"name": "Eth-Trunk1"}],
          "route-static": {"IPV4": [], "IPV6": []}, "qos-profile": []}),
     "interfaces[].VLAN.user-vlan[].user-vlan": (
-        with_iface(Name="Eth-Trunk1"),
+        with_iface(Name="Eth-Trunk1", UserVlan=100),
         {"device_name": "", "device_ip": "",
-         "interfaces": [{"name": "Eth-Trunk1"}],
+         "interfaces": [{"name": "Eth-Trunk1",
+                         "VLAN": {"user-vlan": [{"user-vlan": [100]}]}}],
          "route-static": {"IPV4": [], "IPV6": []}, "qos-profile": []}),
     "interfaces[].VLAN.dot1q": (
         with_iface(Name="Eth-Trunk1"),
@@ -287,6 +289,17 @@ def test_no_synthesis():
     check("接口无 IP → 无 IP 键", "IP" not in out2["interfaces"][0])
     # 接口无 VPN → 不产生 vpn 键
     check("接口无 VPN → 无 vpn 键", "vpn" not in out2["interfaces"][0])
+    check("接口无 VLAN 来源 → 无 VLAN 空壳", "VLAN" not in out2["interfaces"][0])
+    untouched = {"Interfaces": [{"Name": "x", "UserVlan": 100}]}
+    import copy
+    snapshot = copy.deepcopy(untouched)
+    first = to_incumbent_shape(untouched)
+    second = to_incumbent_shape(untouched)
+    check("适配器重复调用逐字节相同", json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True))
+    check("适配器不修改输入", untouched == snapshot)
+    check("VLAN 映射不合成 type", "type" not in first["interfaces"][0]["VLAN"])
+    check("VLAN 映射不合成 QinQ", "QinQ" not in first["interfaces"][0]["VLAN"])
+    check("VLAN 映射不合成 dot1q", "dot1q" not in first["interfaces"][0]["VLAN"])
     # 路由缺 NextHop → 映射成空串（与 incumbent 对齐，design.md 明确允许）
     out3 = to_incumbent_shape({"RouteStatics": [{"Prefix": "1.1.1.0", "Mask": "255.255.255.0"}]})
     eq("路由缺 NextHop → 空串（对齐 incumbent）",
@@ -341,9 +354,20 @@ def test_real_shape_smoke():
         check("输出可 JSON 序列化", False, repr(e))
 
 
+def test_source_is_authoritative():
+    original = adapter.ENTRY["device_name"]["source"]
+    try:
+        adapter.ENTRY["device_name"]["source"] = "Device[0].RouterId"
+        np_in, expect = SAMPLES["device_name"]
+        check("改错source后对应样例确实失败", to_incumbent_shape(np_in) != expect)
+    finally:
+        adapter.ENTRY["device_name"]["source"] = original
+    eq("source恢复后样例恢复", to_incumbent_shape(np_in), expect)
+
+
 def main():
     for fn in (test_mapping_spec_shape, test_every_mapping_has_sample, test_samples,
-               test_no_synthesis, test_real_shape_smoke):
+               test_no_synthesis, test_real_shape_smoke, test_source_is_authoritative):
         try:
             fn()
         except Exception as e:                   # noqa: BLE001

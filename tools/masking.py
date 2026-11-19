@@ -26,6 +26,7 @@ _HUAWEI_CIPHER = re.compile(r"%\^%#.+?%\^%#")
 
 # ② 高熵长串：长度 ≥ 24 **且** 字符集 ⊆ base64/十六进制 **且** 至少含 3 类字符
 #    （大写 / 小写 / 数字各算一类；缺一类就放过 —— 小写十六进制校验和是误报重灾区）
+# 无分隔符的拼音描述也可能只含大小写与数字，不能仅凭三类字符认定凭据。
 _B64 = r"[A-Za-z0-9+/=]"
 _HIGH_ENTROPY = re.compile(
     rf"(?={_B64}*[a-z])(?={_B64}*[A-Z])(?={_B64}*[0-9]){_B64}{{24,}}")
@@ -42,8 +43,13 @@ def is_secret_shape(text):
     """
     if not isinstance(text, str) or not text:
         return False
-    for p in SECRET_SHAPE_PATTERNS:
+    for i, p in enumerate(SECRET_SHAPE_PATTERNS):
         if p.fullmatch(text):
+            if i == 1:
+                # 至少 6 个数字 / base64 符号：31 位拼音描述只有 2 个数字时不再误报；
+                # 华为密文即使外层标记缺失，通常仍含足够多的非字母字符。
+                if sum(not ch.isalpha() for ch in text) < 6:
+                    continue
             return True
     return False
 

@@ -18,7 +18,8 @@ D9 铁律：**只做「键改名 + 结构重排 + 值搬运」**
 --------------------------------------------
 代码里的取值**全部经由本表的 `source` 路径解析** ⇒ 改错一条 `source`，
 对应样例立刻失败（tasks.md 2.1.3 的验收）。`root_cause_if_empty` 同时充当
-D8 要求的 **coverage 分类**（报告直接读它）。
+D8 的**待验证根因假设**。报告不得直接据此自动判定根因；
+自动分类必须另有真实输入、模板声明与真实 trace 证据。
 
 `source` 路径语法
 -----------------
@@ -132,16 +133,17 @@ MAPPING_SPEC = [
      "note": "限速第 3/3 层：接口级直给数值"},
 
     # ── VLAN 三列 ───────────────────────────────────────
+    {"id": "interfaces[].VLAN.user-vlan[].user-vlan",
+     "path": "interfaces[].VLAN.user-vlan[].user-vlan",
+     "source": "Interfaces[].UserVlan", "column": "CVLAN",
+     "root_cause_if_empty": "待人工判定",
+     "note": "VLAN ↔ UserVlan：只搬运已捕获的标量，不合成 type/QinQ/dot1q"},
     {"id": "interfaces[].VLAN.type", "path": "interfaces[].VLAN.type", "source": None,
      "column": "VLAN封装类型", "root_cause_if_empty": "模板未覆盖该命令",
      "note": "dot1q / user-vlan / QinQ"},
     {"id": "interfaces[].VLAN.QinQ[].qinq", "path": "interfaces[].VLAN.QinQ[].qinq", "source": None,
      "column": "PVLAN", "root_cause_if_empty": "模板未覆盖该命令",
      "note": "外层（业务叠加层）"},
-    {"id": "interfaces[].VLAN.user-vlan[].user-vlan",
-     "path": "interfaces[].VLAN.user-vlan[].user-vlan", "source": None,
-     "column": "CVLAN", "root_cause_if_empty": "模板未覆盖该命令",
-     "note": "内层；incumbent 侧还有 VLAN.dot1q 兜底"},
     {"id": "interfaces[].VLAN.dot1q", "path": "interfaces[].VLAN.dot1q", "source": None,
      "column": "CVLAN", "root_cause_if_empty": "模板未覆盖该命令",
      "note": "内层兜底"},
@@ -278,6 +280,11 @@ def to_incumbent_shape(np_result):
         vpn = _first(resolve_item(it, _src("interfaces[].vpn.name")))
         if vpn:
             d["vpn"] = {"name": vpn}
+        user_vlan = _first(resolve_item(
+            it, _src("interfaces[].VLAN.user-vlan[].user-vlan")))
+        if user_vlan is not None:
+            # 标量 -> incumbent 的嵌套单值列表；其余 VLAN 子键不合成。
+            d["VLAN"] = {"user-vlan": [{"user-vlan": [user_vlan]}]}
         out["interfaces"].append(d)
 
     for r in (np_result.get("RouteStatics") or []):
