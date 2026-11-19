@@ -144,6 +144,23 @@ def check_fixture(name, sample, baseline, problems, stats):
         long_desc = "TO-[SNANK-PC-CMNET-RT01-NE5000E]-Eth-Trunk6=6*10GEUPLINKCR01"
         if long_desc not in text:
             problems.append(f"[{name}] 长非凭据描述丢失或被遮蔽: {long_desc}")
+        # secondary 地址：带 sub 的有 AddressType 键，不带 sub 的**没有**该键
+        # （与 incumbent 的键存在性语义一致；删掉 fixture 里的 sub → 本断言失败）
+        sub_cnt = 0; nosub_cnt = 0
+        for it in res.get("Interfaces", []) or []:
+            for ip in it.get("IpAddress", []) or []:
+                if "AddressType" in ip:
+                    sub_cnt += 1
+                    if ip["AddressType"] != "sub":
+                        problems.append(f"[{name}] AddressType 取值异常: {ip['AddressType']!r}")
+                else:
+                    nosub_cnt += 1
+        if sub_cnt == 0:
+            problems.append(f"[{name}] AddressType 断言失败：没有捕获到任何 sub 地址 → "
+                            f"secondary 地址覆盖是空断言")
+        if nosub_cnt == 0:
+            problems.append(f"[{name}] AddressType 断言失败：没有非 sub 地址 → "
+                            f"「键不存在」语义没被覆盖")
 
     stats.append((name, res, masked))
     return res

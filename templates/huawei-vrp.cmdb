@@ -92,8 +92,9 @@ Track         type(list) desc(track)
   Mask    type(str) reg(\S+) desc(掩码)
   Family  type(str) reg(ipv4|ipv6) desc(地址族)
   Mode    type(str) reg(\S+) desc(自动地址模式)
+  AddressType type(str) reg(sub) desc(地址类型)
   [rule]
-  ^\s*ip address\s+${Address}\s+${Mask}(?:\s+sub)?\s*$   -> Family="ipv4"
+  ^\s*ip address\s+${Address}\s+${Mask}(?:\s+(?P<AddressType>sub))?\s*$   -> Family="ipv4"
   ^\s*ipv6 address\s+${Address}/${Mask}\s*$               -> Family="ipv6"
   ^\s*ipv6 address\s+auto\s+${Mode}\s*$                   -> Address="auto",Family="ipv6"
 
@@ -107,21 +108,40 @@ Track         type(list) desc(track)
 # ── 静态路由 ─────────────────────────────────────────
 RouteStatics type(list) start(^ip route-static) desc(静态路由)
 [value]
-Prefix      type(str) reg(\S+) desc(前缀) option(Key)
-Mask        type(str) reg(\S+) desc(掩码) option(Key)
-NextHop     type(str) reg(\S+) desc(下一跳)
-Preference  type(int) reg(\d+) desc(优先级)
-Description type(str) reg(.+) desc(描述)
-VpnInstance type(str) reg(\S+) desc(所属 VPN 实例) option(Key)
+Prefix       type(str) reg(\S+) desc(前缀) option(Key)
+Mask         type(str) reg(\S+) desc(掩码) option(Key)
+NextHop      type(str) reg(\d{1,3}(?:\.\d{1,3}){3}|NULL0) desc(下一跳)
+NextHopIface type(str) reg((?!NULL0)(?!\d{1,3}(?:\.\d{1,3}){3}(?:\s|$))[^\s]+) desc(出接口)
+Preference   type(int) reg(\d+) desc(优先级)
+Description  type(str) reg(.+) desc(描述)
+VpnInstance  type(str) reg(\S+) desc(所属 VPN 实例) option(Key)
 [rule]
-^\s*ip route-static\s+${Prefix}\s+${Mask}\s+${NextHop}
+# ① vpn-instance 变体 · 纯下一跳
+^\s*ip\s+route-static\s+vpn-instance\s+${VpnInstance}\s+${Prefix}\s+${Mask}\s+${NextHop}
       (?:\s+preference\s+(?P<Preference>\d+))?
-      (?:\s+description\s+(?P<Description>.+))?\s*$
+      (?:\s+description\s+(?P<Description>.+))?
+      (?:\s+.*)?\s*$
+      -> RouteStatics{VpnInstance,Prefix,Mask,NextHop,Preference,Description}
+# ② vpn-instance 变体 · 出接口（下一跳可选）
+^\s*ip\s+route-static\s+vpn-instance\s+${VpnInstance}\s+${Prefix}\s+${Mask}\s+(?P<NextHopIface>(?!NULL0)(?!\d{1,3}(?:\.\d{1,3}){3}(?:\s|$))[^\s]+)
+      (?:\s+${NextHop})?
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?
+      (?:\s+.*)?\s*$
+      -> RouteStatics{VpnInstance,Prefix,Mask,NextHopIface,NextHop,Preference,Description}
+# ③ plain 变体 · 纯下一跳（尾部放宽，吞掉多余 token，与 incumbent 一致）
+^\s*ip\s+route-static\s+(?!vpn-instance\s)${Prefix}\s+${Mask}\s+${NextHop}
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?
+      (?:\s+.*)?\s*$
       -> RouteStatics{Prefix,Mask,NextHop,Preference,Description}
-^\s*ip route-static\s+vpn-instance\s+${VpnInstance}\s+${Prefix}\s+${Mask}\s+${NextHop}
+# ④ plain 变体 · 出接口（下一跳可选）
+^\s*ip\s+route-static\s+(?!vpn-instance\s)${Prefix}\s+${Mask}\s+(?P<NextHopIface>(?!NULL0)(?!\d{1,3}(?:\.\d{1,3}){3}(?:\s|$))[^\s]+)
+      (?:\s+${NextHop})?
       (?:\s+preference\s+(?P<Preference>\d+))?
-      (?:\s+description\s+(?P<Description>.+))?\s*$
-      -> RouteStatics{Prefix,Mask,NextHop,Preference,Description,VpnInstance}
+      (?:\s+description\s+(?P<Description>.+))?
+      (?:\s+.*)?\s*$
+      -> RouteStatics{Prefix,Mask,NextHopIface,NextHop,Preference,Description}
 
 # ── VPN 实例 ─────────────────────────────────────────
 VpnInstances type(list) start(^ip vpn-instance) desc(VPN实例)

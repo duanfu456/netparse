@@ -19,7 +19,7 @@
 
 - [x] **0.2 记录只读基线（供 2.7 的只读自检比对）**
   - 改动：新建 `tools/readonly_guard.py`（本仓库内），功能：对给定目录树计算「路径 → (size, mtime_ns, sha1)」清单，存到 `.devforge/spec/changes/netparse-v3-diff-and-mask/readonly-baseline.json`
-  - 只读目录清单：① `E:\配置文件\原始配置\` ② `E:\配置文件\BRAS&SR\解析后\` ③ `E:\配置文件\配置解析\华为\`
+  - 只读目录清单：① `E:\配置文件\BRAS&SR\原始配置\`（⚠️ **不是** `E:\配置文件\原始配置\` —— **那个路径不存在**，本条为 2026-11-19 实现期修正；真实路径下有 26 个月目录 / 10054 个文件 / 3.3GB）② `E:\配置文件\BRAS&SR\解析后\` ③ `E:\配置文件\配置解析\华为\`
   - ⚠️ ②③ 目录树大（8440 个 JSON + 解析后 1.2GB）→ **只记录 size + mtime_ns，不算 sha1**（性能）；① 只对 `原始配置` 算 sha1（用于强校验，可按文件数分片）
   - 验证：`python tools/readonly_guard.py --capture` 退出码 0，输出基线文件行数统计
 
@@ -42,6 +42,12 @@
 - [x] **1.1.2 `convert()` 对 secret 字段不做类型转换**
   - 改动：`tools/probe_stack.py` 的 `convert()`（第 325-348 行）—— 入口加 `if fld is not None and fld.is_secret(): return value`（原样返回字符串，避免 int/float 转换把掩码串改掉或回退原值）
   - 验证：单元级 —— `convert("******", Field("P", {"type":"secret"}, set()))` 返回 `"******"`；`convert("******", Field("P", {"type":"int"}, set()))` 返回 `"******"`（int 转换失败回退原值，行为不变）
+
+- [x] **1.1.3 一个字段只能声明一种 type（`secret` 与其它类型互斥）**
+  - 改动：`tools/probe_stack.py` 的 `parse_modifiers()` —— 遇到第二个 `type(...)` 时**保留第一个** type 并打冲突标记（`TYPE_CONFLICT_KEY`）；`Field` 增 `type_conflict` 属性；`apply_writes()` 两处分支遇到冲突字段**跳过不写**（该字段按缺字段处理）
+  - ⚠️ **为什么跳过而不是报错**：spec 的 Requirement「secret 与其它类型互斥」要求"引擎不产出该字段（该记录按缺字段处理），而不是抛未捕获异常" —— 抛异常会让整个文件解析失败，代价过大
+  - ⚠️ **值仍照常遮蔽**：即使字段因冲突被跳过，捕获到的值在 `_apply` 阶段**已经遮蔽**（D6 遮蔽点在捕获处）⇒ **不会泄露明文**
+  - 验证：① `Password type(secret) type(int)` → lint 报「错误」；② 该字段**不出现在**输出记录里；③ 引擎**不抛异常**，其余字段正常产出；④ 输出全文无明文
 
 ### 1.2 引擎：遮蔽发生在写入时（0.5 人日）
 
@@ -90,8 +96,16 @@
 
 - [x] **1.4.3 疑似漏标 → 警告**
   - 改动：同上。规则文本含凭据关键字（`password`/`cipher`/`secret`/`shared-key`/`md5-password`/`irreversible-cipher`/`key-string`/`authentication-key`）**且**该规则引用的字段（`${X}` 引用 + `-> 目标{}` 里的字段）未被声明为 `type(secret)` → 警告
-  - ⚠️ 关键字匹配必须是**词边界**匹配（`\bpassword\b` 之类），避免 `default-password-template` 被误判成凭据命令
+  - ⚠️⚠️ **关键字匹配不能用 `\b` 词边界**（本条为 2026-11-19 实现期修正）：**连字符是非单词字符** ⇒ `\bpassword\b` 对 `default-password-template` **照样命中**（实测 19317 次误报）。
+    **正确做法：按"整词切分（保留连字符）"后再比对** —— 即 `re.split(r"[^A-Za-z0-9-]+", pattern)`，`default-password-template` 切成**一个整词**，不等于 `password` → 不命中 ✓
+    - 字段**名**的判定仍可用 `\b`（camelCase 下 `Password` 命中、`PasswordType`/`DefaultPasswordTemplate` 不命中 ✓）
+    - ⚠️ 残留（可接受，级别是警告不是错误）：`password-policy` 仍会被命中（`startswith(kw + "-")`）—— 华为的 `password-policy` 是口令复杂度策略、不是凭据
+    - **参考实现**：`tools/probe_stack.py` 的 `_rule_tokens()` / `_rule_has_credential_keyword()` / `_name_is_credential()`（能力 A 已实现并验证）
   - 验证：三条子用例 —— ① `peer X password cipher ${Password}` + `Password type(str)` → 警告；② 同上但 `type(secret)` → 无警告；③ `default-password-template ${X}` → **无警告**
+
+- [x] **1.4.4 一个字段声明了多个 type → 错误**
+  - 改动：`tools/probe_stack.py` 的 `lint()` —— `fld.type_conflict` 为真时报「错误」：*"字段 X 声明了多个 type：一个字段只能声明一种 type（secret 与其它类型互斥）"*
+  - 验证：构造 `Password type(secret) type(int)` 跑 `--lint`，输出含「错误」级别并提到该集合与字段名
 
 ### 1.5 模板：存量字段标注（0.2 人日）
 
@@ -152,7 +166,7 @@
 - [x] **1.7.2 13 个探针冒烟**
   - 改动：无
   - 验证：依次运行 `tools/probe_*.py`（每个脚本按其 docstring 的用法传参），**全部不因脱敏改动而崩溃**；输出与改动前语义一致（字段值可能变掩码）
-  - ⚠️ `probe_coverage2.py` 目前本身是坏的（trace 4 元组 vs 3 元组解包）→ **该脚本的失败不算本任务失败**，但需在报告里注明
+  - ⚠️ **原注"probe_coverage2.py 本身是坏的（trace 4 元组 vs 3 元组解包）"已作废**（2026-11-19 复核）：该问题在基线提交 `d369293` 之前就已修好（`git show d369293:tools/probe_coverage2.py` 第 48 行是 `for no, line, hit, _stack in trace:`），**实测该脚本现在 exit=0** ⇒ **它不再享有豁免，失败即算本任务失败**
 
 - [x] **1.7.3 ⛔ 能力 A 门禁**
   - 检查点：1.7.1 与 1.7.2 全通过 → **能力 B 才可开工**（否则 diff 报告会带明文）
@@ -218,7 +232,8 @@
     | `interfaces[].QOS.in/out.car`（**直给值**） | **无** | ⚠️ 根因 `模板未覆盖该命令`；**限速列的第 3/3 层（接口级直给）** |
 
   - ⚠️ **限速三层的缺一不可**（实测）：顶层 list（40/40 文件都有）+ 接口级引用（1770 个接口）+ 接口级直给（2304 个接口）；`get_speed` 的规则是"**两者都存在取小**"。⇒ 模板要补**三处**规则，不是三选一
-  - 验证：映射表条目数 ≥ **26**；每条都有 `path` 与 `root_cause_if_empty`；`grep -c "source" src/netparse/adapters/incumbent.py` > 0
+  - ⚠️⚠️ **映射表不得添加 peer / Password / Bgp 相关行**（2026-11-19 复核修正）：**incumbent 产物里根本没有 peer/BGP 段** —— 其顶层键**恒为 5 个**（`device_name`/`device_ip`/`interfaces`/`route-static`/`qos-profile`，401 个产物抽样一致）；实测一个配置原文含 58 行 `password cipher` 的设备，产物里 `%^%#`/`password`/`peer` 命中**均为 False**。⇒ 加了会写出**恒为空的映射 = 假缺口**。`Bgp`/`BgpPeers` 应作为 **netparse 独有的资产类别**出现在段二的 `only_netparse` 里，不是映射行
+  - 验证：映射表条目数 ≥ **26**；每条都有 `path` 与 `root_cause_if_empty`；`grep -c "source" src/netparse/adapters/incumbent.py` > 0；**`grep -iE "peer|password|bgp" src/netparse/adapters/incumbent.py` 的 MAPPING_SPEC 段无命中**（docstring 提到不算）
 
 - [ ] **2.1.2 实现 `to_incumbent_shape()`**
   - 改动：同文件。**纯结构映射**（design.md D9）：键改名 + 结构重排 + 值搬运；**禁止**推导/默认值/合成
@@ -233,19 +248,19 @@
 
 ### 2.2 模板：`AddressType`（D3）（0.3 人日）
 
-- [ ] **2.2.1 `IpAddress` 增加 `AddressType` 字段并捕获 `sub`**
+- [x] **2.2.1 `IpAddress` 增加 `AddressType` 字段并捕获 `sub`**
   - 改动：`templates/huawei-vrp.cmdb` 的 `IpAddress` 集合 —— 在 `[value]` 段加 `AddressType type(str) reg(sub) desc(地址类型)`；规则第 96 行改为
     `^\s*ip address\s+${Address}\s+${Mask}(?:\s+(?P<AddressType>sub))?\s*$   -> Family="ipv4"`
   - ⚠️ **裸命名组 `AddressType` 必须先在字段表声明**（否则 lint「命名组未声明」会报错）→ **先加字段声明，再改规则**
   - ⚠️ **保持规则与原来一样能匹配非 sub 形式**（`(?:\s+...)?` 可选）
   - 验证：`python tools/probe_stack.py templates/huawei-vrp.cmdb <含 sub 的真实文件> --json` → 对应 IP 记录含 `AddressType: "sub"`；不含 sub 的接口**无**该键
 
-- [ ] **2.2.2 回归基线同步**
+- [x] **2.2.2 回归基线同步**
   - 改动：确认 1.6.3 新建的 `sample-vrp-secret.txt` 里**已包含**一条 `sub` 地址与一条非 `sub` 地址；运行 `python tests/run_regression.py --update` 后**人工 diff**
   - ⚠️ 原 `sample-vrp.txt` **没有 `sub` 地址**（实测只有第 22 行一条 `ip address`）→ 它的基线**不变**；`AddressType` 的断言由 `sample-vrp-secret.txt` 承担
   - 验证：`git diff tests/fixtures/` 中只出现 `AddressType` 相关键（且只在 `sample-vrp-secret.expected.json` 里）；`sample-vrp.expected.json` **无变化**
 
-- [ ] **2.2b.0 ⭐ 改动前先存修前模板快照**
+- [x] **2.2b.0 ⭐ 改动前先存修前模板快照**
   - 改动：把**改动前**的 `templates/huawei-vrp.cmdb` 原样复制到 `.devforge/spec/changes/netparse-v3-diff-and-mask/baseline-template.cmdb`
   - ⚠️ **必须在 2.2b.1 之前做**，否则"修前"基线就丢了
   - 验证：`diff <(cat templates/huawei-vrp.cmdb) <(cat .devforge/.../baseline-template.cmdb)` → 无差异（改动前应完全相同）
@@ -256,14 +271,14 @@
 > **⇒ 对台账第 10 列的影响 ≈ 100%**：incumbent 的第 10 列只收带出接口的路由（`build_route_index` 跳过无 `interface` 的），而这些恰好是 netparse 丢的那批。
 > **最终 4 条规则的写法、判别式设计、两个引擎坑、逐字段验证结果，全部见 design.md `## Interfaces` 的「静态路由多形态」小节（已实测，与 incumbent 212/212 完全一致）。**
 
-- [ ] **2.2b.1 `RouteStatics` 的字段声明：`NextHopIface` 新增 + `NextHop` 的 reg 收窄**
+- [x] **2.2b.1 `RouteStatics` 的字段声明：`NextHopIface` 新增 + `NextHop` 的 reg 收窄**
   - 改动：`templates/huawei-vrp.cmdb` 的 `RouteStatics` 集合 `[value]` 段
     - 新增 `NextHopIface type(str) reg((?!NULL0)[A-Za-z][\w./-]*) desc(出接口)`（**判别式**：以字母开头且不是 NULL0 = 接口名）
     - `NextHop` 的 reg 从 `\S+` 收窄为 `\d{1,3}(?:\.\d{1,3}){3}|NULL0`（**IP 或黑洞下一跳**）
     - ⚠️ **先加字段声明，再改规则**（lint 的「命名组名必须在字段表」要求 `NextHopIface` 先声明）
   - 验证：`python tools/probe_stack.py templates/huawei-vrp.cmdb <真实文件> --lint` 无「错误」级
 
-- [ ] **2.2b.2 静态路由规则改成 4 条（vpn-instance 变体在前，plain 变体在后）**
+- [x] **2.2b.2 静态路由规则改成 4 条（vpn-instance 变体在前，plain 变体在后）**
   - 改动：把现有 2 条 `ip route-static` 规则换成 design.md 的 4 条（① vpn·纯下一跳 ② vpn·出接口+下一跳 ③ plain·纯下一跳 ④ plain·出接口）
   - ⚠️ **坑 1 · 每条规则内 `${NextHop}` 只出现一次** —— 重复出现会编译成回溯引用 `(?P=NextHop)`（语义变成"接口名必须等于下一跳"）。**已实测：拆成多条规则即可规避，不需要换字段名**（`compile_rule` 的 `seen` 是函数内局部变量，per-rule）
   - ⚠️ **坑 2 · 不要用 alternation 做形态分流** —— 用 `reg()` 判别（`NextHop`=IP|NULL0 / `NextHopIface`=以字母开头且非 NULL0）
@@ -273,7 +288,7 @@
   - ⚠️ **已知边界**：下一跳为**主机名**（非 IP）的路由匹配不到；实测语料 0 条，须在模板注释里写明
   - 验证：见 2.2b.4
 
-- [ ] **2.2b.3 ⭐ 全量汇总口径验证（不要用单文件断言 —— 单文件无分辨力）**
+- [x] **2.2b.3 ⭐ 全量汇总口径验证（不要用单文件断言 —— 单文件无分辨力）**
   - 改动：无（只读验证；比对脚本放 `tools/` 下可重跑）
   - 验证（**至少 60 个含形态2 路由的真实文件**，汇总断言）：
     - 形态 2 的 **75 条**中，netparse **修前抓到 3 条**、**修后应抓到 ≥ 70 条**（允许少量因其它形态差异而失配）
@@ -288,7 +303,7 @@
     - ④ **整体逐字段一致**：`(Prefix, Mask, NextHopIface, NextHop, VpnInstance)` 集合与 incumbent 的 `(dest, mask, interface, nexthop, vpn)` **完全相同，差异 0**
     - **基线**：该文件 incumbent 有 **212** 条 IPV4 路由；改后 netparse 也应是 **212** 条且集合一致（design.md 已实测达成 212/212、差异 0）
 
-- [ ] **2.2b.4 边界形态回归（7 种，全部要过）**
+- [x] **2.2b.4 边界形态回归（7 种，全部要过）**
   - 验证（每种输入的期望值 = incumbent 的判据「首 token 非 IP 且非 NULL0 → 出接口」）：
     ```
     ip route-static P M 10.1.1.1 description pure      → NextHop=10.1.1.1, Description ✓
@@ -302,12 +317,25 @@
     - ⚠️ 第 5 条是**与 incumbent 对齐的关键**：若 `NextHopIface` 的 reg 用 `\S+` 而不是判别式，这条会变成 `NextHopIface=1.2.3.4, NextHop=5.6.7.8`（**与 incumbent 不一致**）
     - ⚠️ 第 4 条是**「只有出接口」形态**：若 `NextHop` 的 reg 不收窄，这条会变成 `NextHop=Eth-Trunk99`（**接口名被误填进下一跳**）
 
-- [ ] **2.2b.5 丢失率复测**
+- [x] **2.2b.5 丢失率复测**
   - 改动：无（只读验证）
   - 验证：在 60 台样本上复算「带显式出接口的路由」条数与 netparse 丢失条数
     - **判定时 MUST 排除 `NULL0`**（`interface NULL0` 在 60/60 个文件里存在）
     - 期望：带出接口的路由 **76** 条 → 丢失 **0** 条（修完）
   - ⚠️ 复测脚本放在 `tools/` 下（可重跑），不要只跑一次
+  - ✅ **实施记录**：新增 `tools/check_route_forms.py`（可重跑，一次跑完 2.2b.3/4/5）。
+    - **边界形态 7/7 过**；**真实文件逐字段集合完全一致 360/360**（cfgfile_20250824 / cfgfile_20260124 / 配置文件202408 各 120 个）
+    - **带显式出接口的路由（排除 NULL0）：修前 0 条（丢 100%）→ 修后 100% 抓到（丢 0%）**（198 / 295 / 96 条三批）
+    - 架构师指定的验收文件 `SNBJI-MC-CMNET-BRAS01-MYL-X16A_218.200.1.138.20250824061211`：**incumbent 212 条 vs netparse 212 条，集合完全相同，差异 0**（修前 207 条）
+    - ⚠️ **规则写法相对 design.md 的 4 条方案做了 3 处修正（真实语料逼出来的，design.md 的写法在现网匹配不上）**：
+      1. **`NextHopIface` 的 reg 从 `(?!NULL0)[A-Za-z][\w./-]*` 改成 `(?!NULL0)(?!\d{1,3}(?:\.\d{1,3}){3}(?:\s|$))[^\s]+`**
+         —— 现网接口名**有以数字开头和含 `|` 的**（`50|100GE6/0/0`、`100GE11/0/1`），原写法匹配不上 ⇒ 这批路由整条丢失。
+         新写法 = "不是 IP、不是 NULL0 ⇒ 就是接口名"，与 incumbent 的判据**逐字对齐**。
+      2. **4 条规则的尾部都放宽成 `(?:\s+.*)?`**
+         —— 现网路由行带 `track nqa Ali ...` 尾巴（原写法整条失配）。incumbent 对多余 token 是**忽略**，不是失配。
+      3. **②④ 的"下一跳"改成可选 `(?:\s+${NextHop})?`；③④ 加 `(?!vpn-instance\s)` 前瞻**
+         —— 现网存在"vpn-instance + 出接口、**无下一跳**"形态（抽样 337 文件里 4 条）；无前瞻时 plain 规则会错位捕获 `Prefix="vpn-instance"`（静默错值，比丢数据更糟）。
+      ⇒ **design.md 的"4 条规则 + 判别式"骨架、顺序、坑 1/2/3 全部保留**，只是把两处与现网不符的正则形态修正了。建议架构师回填 design.md。
 
 ### 2.3 diff 工具骨架（0.8 人日）
 
@@ -373,12 +401,23 @@
   - ⚠️ **必须双向**：只报缺口会系统性低估 netparse（netparse 多出的接口级字段 incumbent 一个都没有）
   - 验证：在 1558 接口的样本上断言 `matched` 恰为 **4**（name/description/IP/vpn）、`only_incumbent` 恰为 **6**（QOS/VLAN/bas/multicast/qos-profile/traffic-policy）、`only_netparse` **不少于 10**；断言 `collection_level_fields.qos_profile_top.netparse == null`
 
+- [ ] **2.4.5b ⭐ 资产类别覆盖对比（段二 · 谁覆盖的资产种类多）**
+  - 改动：在 `part2_capability.asset_categories` 里产出两侧各自的资产类别清单 + `only_netparse` 清单及**每个类别的实例数**
+  - **实测基线**：
+    - **incumbent 侧 = 4 类**（产物顶层键**恒为 5 个**：`device_name`/`device_ip`/`interfaces`/`route-static`/`qos-profile`，其中 `qos-profile` 是命名空间定义；401 个产物抽样一致）
+    - **netparse 侧 = 12 类**：`Device` `Interfaces` `IpAddress` `EthTrunkMember` `RouteStatics` `VpnInstances` `Bgp` `BgpPeers` `Acls` `AclRules` `Nqas` `NqaSessions`
+    - ⇒ **netparse 独有的 8 类**：`IpAddress` `EthTrunkMember` `VpnInstances` `Bgp` `BgpPeers` `Acls` `AclRules` `Nqas` `NqaSessions`（其中 `IpAddress`/`EthTrunkMember`/`VpnInstances`/`RouteStatics`/`Device`/`Interfaces` 与 incumbent 的 `interfaces`/`route-static`/`device` 概念重叠，**"独有"指 incumbent 产物里没有对应的顶层键**）
+  - ⚠️ **实例数是"条数"不是"行数比例"** —— 与段一的全局汇总口径一致
+  - 验证：① `asset_categories.incumbent` 恰为 4 项；② `asset_categories.netparse` 恰为 12 项；③ `only_netparse` 的实例数之和 > 0；④ **结论段两面都报**（"台账列差 N" + "资产类别多 M 类、接口级字段多 K 个"）
+
 ### 2.5 报告产出（0.6 人日）
 
 - [ ] **2.5.1 JSON 报告**
   - 改动：按 design.md `## Interfaces` 节的**两段式**结构写 `--json` 输出（顶层 `part1_ledger` / `part2_capability` / `workload_estimate` / `readonly_check`）；**流式写**（不把 8440 文件的全量数据攒在内存里）
   - ⚠️ `part1_ledger` 里必须有**两个粒度**：`column_fill_rate`（逐文件）与 `global_column_value_count`（全局值条数）；受模板改动影响的列还要有 `incumbent` / `netparse_before_fix` / `netparse_after_fix` 三栏
-  - 验证：`python tools/diff_incumbent.py --all --json <path>` 后 `python -c "import json;d=json.load(open(...));print(d['meta']);print(d['part1_ledger'].keys());print(d['part2_capability'].keys())"` 输出 `files_total=8440, files_processed=8440, files_failed=0` 且两段的键都在；`global_column_value_count` 有 19 个键
+  - ⚠️ **`meta` 段要带脱敏统计 `l1_hits` / `l2_hits`** —— `masking.STATS.as_dict()` 提供。**`l2_hits` 是 D4 说的「模板标注完整度」度量**：L2 命中数远大于 L1 ⇒ 模板漏标 secret。实测真实文件 **L1=3/4/4/9、L2=0** ⇒ 当前模板对已抓到的凭据字段标注完整、无漏标
+  - ⚠️ **`STATS` 是 per-run 的**：`run()` 开头会 `STATS.reset()` ⇒ **diff 工具必须自己累加**每个文件跑完后的 `STATS.as_dict()`，不能只在最后读一次
+  - 验证：`python tools/diff_incumbent.py --all --json <path>` 后 `python -c "import json;d=json.load(open(...));print(d['meta']);print(d['part1_ledger'].keys());print(d['part2_capability'].keys())"` 输出 `files_total=8440, files_processed=8440, files_failed=0` 且两段的键都在；`global_column_value_count` 有 19 个键；`meta` 含 `l1_hits` / `l2_hits`
 
 - [ ] **2.5.2 Markdown 报告 + 工作量估算**
   - 改动：人可读版；**两段都要有**——段一：19 列填充率表（**逐文件 + 全局值条数两栏**）+ 根因表 + 差异样本 + 接口数一致性 + **修前/修后对照**；段二：双向字段覆盖（缺什么 / 多什么）+ 集合级结构差异 + `extra_value_note`；外加 `workload_estimate`（逐列 `column`/`gap`/`change`/`effort_days` + 总区间 + 与 FINAL-plan 8.4 的 `68-104` 对照）
@@ -405,9 +444,10 @@
 - [ ] **2.7.1 结论可回答决策问题**
   - 检查点：报告能回答**两个**问题 ——
     1. **台账口径**：`workload_estimate` 段能回答"netparse 距离替代 incumbent 还差哪几列、每列差多少、补齐共需多少人日"
-    2. **能力口径**：`part2_capability` 段能回答"netparse 整体解析能力是更强还是更弱、比 incumbent 多了哪些字段、这些字段值不值得用上"
+    2. **能力口径**：`part2_capability` 段能回答"netparse 整体解析能力是更强还是更弱、比 incumbent 多了哪些**字段**、多了哪些**资产类别**、这些值不值得用上"
   - **AND** 能对照 `docs/FINAL-plan.md` 8.3 实验 1 的判据给出结论（差距大 → 重新评估路线 2；差距小 → 按 8.1 走）
-  - ⚠️ **结论不得只依据段一**：若段二显示 netparse 多出的字段（AdminStatus/Mtu/Speed/Vrrp/Track…）有 CMDB 价值，则"台账列还差 N 列"这个负面结论要**连同"但能力面并不更弱"一起**陈述，否则结论会被系统性低估
+  - ⚠️ **结论必须两面都报，不得只依据段一**：结论形态应是「**台账列差 N，但资产类别多 M 类、接口级字段多 K 个**」。若段二显示 netparse 多出的字段/类别有 CMDB 价值，则"台账列还差 N 列"这个负面结论要**连同"但能力面并不更弱"一起**陈述
+  - ⚠️ **段一无密码列**：incumbent 产物无 peer/BGP 段（顶层键恒为 5 个）⇒ 报告里**不出现**任何与密码相关的列或结论；`Bgp`/`BgpPeers` 属段二的 netparse 独有类别，否则结论会被系统性低估
 
 - [ ] **2.7.2 报告入仓 + 只读终检**
   - 改动：报告写入 `.devforge/spec/changes/netparse-v3-diff-and-mask/diff-report/`；大文件按 design.md **Q7** 处理（压缩或只提交汇总 + 样本）
@@ -418,8 +458,10 @@
 ## 3. 文档与结论回写（0.5 人日）
 
 - [ ] **3.1 `docs/TEMPLATE-GUIDE.md` 补 `type(secret)` 语法**
-  - 改动：3.2 字段声明表加 `type(secret)` 行；新增一小节讲脱敏（何时用、掩码串可配、Key 不兼容、inherit 禁止）
-  - 验证：`grep -n "type(secret)" docs/TEMPLATE-GUIDE.md` 命中；文档中的语法示例能被引擎解析（用一个最小模板验证）
+  - 改动：3.2 字段声明表加 `type(secret)` 行；新增一小节讲脱敏（何时用、掩码串可配、Key 不兼容、inherit 禁止、**一个字段只能声明一种 type**）
+  - ⚠️ **同时要更新命令表**：说明 **`--json` 时 lint 报告走 stderr**（D14）—— 想同时看 lint 要写 `> out.json 2> lint.txt`（或 `2>&1 | tee`）；非 `--json` 模式不变
+  - ⚠️ **同时要注明**「嵌套字段用**点号路径**（`Statistic.Mode`）而不是组名（`Statistic__Mode`）」—— 后者在 `-> 集合名{}` 目标里会被静默丢弃（实现期发现，能力 A 的 `_apply` members 分支以路径为键）
+  - 验证：`grep -n "type(secret)" docs/TEMPLATE-GUIDE.md` 命中；`grep -n "stderr" docs/TEMPLATE-GUIDE.md` 命中；文档中的语法示例能被引擎解析（用一个最小模板验证）
 
 - [ ] **3.2 `docs/FINAL-plan.md` 回填 diff 结论**
   - 改动：8.3 实验 1 标注"已完成"，填入实测的 19 列填充率、根因、工作量区间；4.1 的"9/19 覆盖"估算改为实测值
