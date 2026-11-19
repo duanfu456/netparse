@@ -165,7 +165,7 @@ Groups         type(list) desc(邻居组)
   Description      type(str) reg(.+) desc(描述)
   ConnectInterface type(str) reg(\S+) desc(连接接口)
   PasswordType     type(str) reg(\S+) desc(密码类型)
-  Password         type(str) reg(.+) desc(密码)
+  Password         type(secret) reg(.+) desc(密码)
   [rule]
   ^\s*peer\s+${Peer}\s+as-number\s+${AsNumber}\s*$              -> BgpPeers{Peer,AsNumber}
   ^\s*peer\s+${Peer}\s+group\s+${Group}\s*$                      -> BgpPeers{Peer,Group}
