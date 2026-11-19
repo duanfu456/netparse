@@ -212,7 +212,7 @@
     | `interfaces[].IP.IPV4[].ip` | `Interfaces[].IpAddress[].Address`（Family=ipv4） | |
     | `interfaces[].IP.IPV4[].mask` | 同上 `.Mask` | |
     | `interfaces[].IP.IPV4[].type` | `Interfaces[].IpAddress[].AddressType` | **依赖 D3 的模板改动** |
-    | `interfaces[].IP.IPV6[].addr` | `Interfaces[].IpAddress[].Address`（Family=ipv6） | |
+    | `interfaces[].IP.IPV6[].ip` | `Interfaces[].IpAddress[].Address`（Family=ipv6） | 实测键名是 `ip`，不是 `addr` |
     | `interfaces[].IP.IPV6[].mask` | 同上 `.Mask` | |
     | `interfaces[].vpn.name` | `Interfaces[].IpBindingVpn` | 无值则不产生 `vpn` 键 |
     | `route-static.IPV4[].dest` | `RouteStatics[].Prefix` | |
@@ -220,7 +220,8 @@
     | `route-static.IPV4[].nexthop` | `RouteStatics[].NextHop` | ⚠️ 「只有出接口」形态下 incumbent 是**空串 `""`**、netparse 是**键缺失** → 适配器映射成 `""` |
     | `route-static.IPV4[].interface` | `RouteStatics[].NextHopIface` | ⚠️ 根因 **`整条记录丢失`**（实测 96% 的"出接口+下一跳"路由整条没进记录），不是单纯的 `字段丢失` |
     | `route-static.IPV4[].vpn` | `RouteStatics[].VpnInstance` | |
-    | `interfaces[].VLAN.*` | **无** | 根因 `模板未覆盖该命令` |
+    | `interfaces[].VLAN.user-vlan[].user-vlan` | `Interfaces[].UserVlan` | **纯值搬运**：`UserVlan` 存在则输出 `{"VLAN": {"user-vlan": [{"user-vlan": [值]}]}}`；**不合成 `type`/`QinQ`/`dot1q`**（无证据的推导一律禁止） |
+    | `interfaces[].VLAN.QinQ` / `.dot1q` | **无** | 根因 `模板未覆盖该命令`（实测 PVLAN 外层在真机上是 `user-vlan 1000 1999 qinq 2000` 同行，无独立 `qinq` 命令；`vlan-type dot1q` 模板无对应规则） |
     | `interfaces[].bas.damian` | **无** | 根因 `模板未覆盖该命令` |
     | `interfaces[].multicast.type` | **无** | 根因 `模板未覆盖该命令` |
     | `interfaces[].traffic-policy.in/out` | **无** | 根因 `模板未覆盖该命令` |
@@ -239,7 +240,7 @@
   - 改动：同文件。**纯结构映射**（design.md D9）：键改名 + 结构重排 + 值搬运；**禁止**推导/默认值/合成
   - ⚠️ `route-static` 在 incumbent 侧是 **dict**（`{"IPV4":[...], "IPV6":[...]}`），不是 list —— 必须重排成 dict
   - ⚠️ `IP` 是 dict（`{"IPV4":[...], "IPV6":[...]}`）；**接口无 IP 时不产生 `IP` 键**
-  - ⚠️ IPv6 的键名是 `addr`、前缀键是 `mask`（incumbent 实测：`{"addr": "...", "mask": "127"}`）
+  - ⚠️ IPv6 的键名是 `ip`、前缀键是 `mask`（incumbent 实测：`{"ip": "...", "mask": "127"}`；早期文档误写为 `addr`，已按真实产物更正）
   - 验证：2.1.3 的样例回归全绿
 
 - [ ] **2.1.3 映射表最小样例回归**
@@ -402,13 +403,19 @@
   - 验证：在 1558 接口的样本上断言 `matched` 恰为 **4**（name/description/IP/vpn）、`only_incumbent` 恰为 **6**（QOS/VLAN/bas/multicast/qos-profile/traffic-policy）、`only_netparse` **不少于 10**；断言 `collection_level_fields.qos_profile_top.netparse == null`
 
 - [ ] **2.4.5b ⭐ 资产类别覆盖对比（段二 · 谁覆盖的资产种类多）**
-  - 改动：在 `part2_capability.asset_categories` 里产出两侧各自的资产类别清单 + `only_netparse` 清单及**每个类别的实例数**
-  - **实测基线**：
-    - **incumbent 侧 = 4 类**（产物顶层键**恒为 5 个**：`device_name`/`device_ip`/`interfaces`/`route-static`/`qos-profile`，其中 `qos-profile` 是命名空间定义；401 个产物抽样一致）
-    - **netparse 侧 = 12 类**：`Device` `Interfaces` `IpAddress` `EthTrunkMember` `RouteStatics` `VpnInstances` `Bgp` `BgpPeers` `Acls` `AclRules` `Nqas` `NqaSessions`
-    - ⇒ **netparse 独有的 8 类**：`IpAddress` `EthTrunkMember` `VpnInstances` `Bgp` `BgpPeers` `Acls` `AclRules` `Nqas` `NqaSessions`（其中 `IpAddress`/`EthTrunkMember`/`VpnInstances`/`RouteStatics`/`Device`/`Interfaces` 与 incumbent 的 `interfaces`/`route-static`/`device` 概念重叠，**"独有"指 incumbent 产物里没有对应的顶层键**）
+  - 改动：在 `part2_capability.asset_categories` 里产出两侧各自的资产类别清单 + **三分类** + 真正独有类别及其实例数
+  - **实测基线（★三分类，不是简单二分）**：
+    ```
+    netparse 12 类 = 共有(结构同) 3 + 共有(结构不同) 2 + 真正独有 7
+      共有(结构同) 3: Device↔device, Interfaces↔interfaces, RouteStatics↔route-static
+      共有(结构不同) 2: IpAddress↔interfaces[].IP, VpnInstances↔interfaces[].vpn
+      真正独有 7: EthTrunkMember, Bgp, BgpPeers, Acls, AclRules, Nqas, NqaSessions
+    incumbent 4 类 = 共有(结构同) 3 + 真正独有 1
+      真正独有 1: qos-profile（顶层命名空间定义）
+    ```
+    - **⚠️ 不能简单说"netparse 独有 9 类"**：实测 incumbent 的 `interfaces[]` 子键只有 **10 种**（`name`/`description`/`VLAN`/`bas`/`IP`/`vpn`/`multicast`/`traffic-policy`/`QOS`/`qos-profile`，120 个产物抽样）⇒ **`IP` 在 120/120 个产物里（26831 次）、`vpn` 在 117/120（21486 次）** ⇒ **IpAddress 与 VpnInstances 的业务内容 incumbent 是有的**（只是嵌在 interfaces 里）→ 算成"独有"会**高估 2 类**，且一旦有人打开 incumbent 的 JSON 就会发现对不上 ⇒ **报告可信度受损**
   - ⚠️ **实例数是"条数"不是"行数比例"** —— 与段一的全局汇总口径一致
-  - 验证：① `asset_categories.incumbent` 恰为 4 项；② `asset_categories.netparse` 恰为 12 项；③ `only_netparse` 的实例数之和 > 0；④ **结论段两面都报**（"台账列差 N" + "资产类别多 M 类、接口级字段多 K 个"）
+  - 验证：① `asset_categories.netparse` 的计数 = `total 12 / shared_same_shape 3 / shared_diff_shape 2 / only 7`；② `asset_categories.incumbent` 的计数 = `total 4 / shared_same_shape 3 / shared_diff_shape 0 / only 1`；③ `netparse_only_instances` **恰 7 项**且**不含** `IpAddress`/`VpnInstances`；④ **结论段两面都报**（"台账列差 N" + "资产类别真正独有 7 类、另有 2 类同业务对象不同层级、接口级字段多 17 个"）
 
 ### 2.5 报告产出（0.6 人日）
 
@@ -420,10 +427,17 @@
   - 验证：`python tools/diff_incumbent.py --all --json <path>` 后 `python -c "import json;d=json.load(open(...));print(d['meta']);print(d['part1_ledger'].keys());print(d['part2_capability'].keys())"` 输出 `files_total=8440, files_processed=8440, files_failed=0` 且两段的键都在；`global_column_value_count` 有 19 个键；`meta` 含 `l1_hits` / `l2_hits`
 
 - [ ] **2.5.2 Markdown 报告 + 工作量估算**
-  - 改动：人可读版；**两段都要有**——段一：19 列填充率表（**逐文件 + 全局值条数两栏**）+ 根因表 + 差异样本 + 接口数一致性 + **修前/修后对照**；段二：双向字段覆盖（缺什么 / 多什么）+ 集合级结构差异 + `extra_value_note`；外加 `workload_estimate`（逐列 `column`/`gap`/`change`/`effort_days` + 总区间 + 与 FINAL-plan 8.4 的 `68-104` 对照）
+  - 改动：人可读版；**两段都要有**——段一：19 列填充率表（**逐文件 + 全局值条数两栏**）+ 根因表 + 差异样本 + 接口数一致性 + **修前/修后对照**；段二：双向字段覆盖（缺什么 / 多什么）+ 集合级结构差异 + **资产类别三分类对比** + `extra_value_note`；外加 `workload_estimate`（逐列 `column`/`gap`/`change`/`effort_days` + 总区间 + 与 FINAL-plan 8.4 的 `68-104` 对照）
   - ⚠️ **标红规则**：全局值条数两侧差 > 20% 的列，在 Markdown 表格里**必须视觉标红**（如加 `🔴` 与加粗）
   - ⚠️ **无分辨力的列**要加注「本列逐文件差异不具分辨力，请以全局值条数为准」
-  - 验证：Markdown 里能直接读出"哪几列差、每列差多少、共多少人日" **以及** "netparse 比 incumbent 多了哪些字段、这些字段值不值得用" **以及** "第 10 列修前 vs 修后差多少"
+  - ⚠️⭐ **报告必须带「复现锚点」段**（2026-11-19 批准新增）—— **这份报告是能力 B 唯一的决策依据**（决定要不要投 68-104 人日），而语料是**月度快照**、下个月就变 ⇒ 没有锚点则三个月后没人能复现、**决策失去锚点**。报告 SHALL 记录：
+    1. **复现命令**（完整命令行，含 `--template` 等全部参数；修前/修后各一条）
+    2. **输入语料快照**：用了哪几个 `cfgfile_YYYYMMDD` 月份目录、各多少文件、总文件数
+    3. **git commit hash ×3**：工具版本 + **模板当前版本** + **模板修前版本**（后者对应 `baseline-template.cmdb`；报告有「修前/修后」两栏 ⇒ **两个模板 commit 都要记**）
+  - 验证：
+    - Markdown 里能直接读出"哪几列差、每列差多少、共多少人日" **以及** "netparse 比 incumbent 多了哪些字段/哪些资产类别、这些值不值得用" **以及** "第 10 列修前 vs 修后差多少"
+    - **报告里有 `repro` 段**，且含 `command` / `command_baseline` / `corpus_snapshots` / `git_commit_tool` / `git_commit_template_current` / `git_commit_template_baseline` 六个字段，**均非空**
+    - **资产类别数字与规格基线一致**：netparse `12/3/2/7`、incumbent `4/3/0/1`（这是最难事后发现的一类错位 —— 两边都自洽、只是对不上）
 
 - [ ] **2.5.3 明文自检 + 临时文件清理 + 只读自检**
   - 改动：报告写盘后扫描密文形态，命中 → 删除报告 + 非 0 退出；finally 块清理临时 JSON；调用 `readonly_guard.py --verify`

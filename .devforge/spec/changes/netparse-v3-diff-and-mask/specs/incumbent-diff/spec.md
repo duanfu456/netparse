@@ -43,14 +43,23 @@ netparse 是**第三版**配置解析方案（前两版：TextFSM + Python 切�
 
 - **WHEN** netparse 的某接口含 `IpAddress: [{"Address": "1.1.1.1", "Mask": "255.255.255.0", "Family": "ipv4"}]`
 - **THEN** 适配器输出该接口含 `IP: {"IPV4": [{"ip": "1.1.1.1", "mask": "255.255.255.0"}], "IPV6": []}`
-- **AND** `Family == "ipv6"` 的条目进入 `IPV6` 列表，且键名为 `addr`、前缀键为 `mask`（与 incumbent 形状一致）
+- **AND** `Family == "ipv6"` 的条目进入 `IPV6` 列表，且键名为 `ip`、前缀键为 `mask`（与 incumbent 形状一致）
+  （实测依据：`解析后/.../SNANK-MC-CMNET-BAS03-SCEC-X16A_*.json` 的 `interfaces[].IP.IPV6[0]` 为
+  `{"ip": "2409:8070:9A:1::7009", "mask": "127"}`，键名是 `ip` 而非 `addr`）
 - **AND** `Family` 字段本身不出现在输出中
 
 #### Scenario: 未捕获的字段不被合成
 
-- **WHEN** netparse 的某接口不含任何 VLAN 相关字段（当前模板 0% 覆盖 `vlan-type dot1q`）
+- **WHEN** netparse 的某接口不含任何 VLAN 相关字段，且真实 trace 证明对应命令未被捕获
 - **THEN** 适配器输出中该接口**不含** `VLAN` 键
 - **AND** 不出现 `VLAN: {"type": "", "user-vlan": [], "QinQ": []}` 之类的空壳结构
+
+#### Scenario: VLAN 内容对应但结构不同
+
+- **WHEN** netparse 接口含标量 `UserVlan: 100`，incumbent 接口含嵌套 `VLAN.user-vlan` 中的同一用户 VLAN 内容
+- **THEN** 适配器只把已捕获的 `UserVlan` 值搬到 incumbent 对应位置，不合成 `type/QinQ/dot1q` 等未捕获内容
+- **AND** 报告把 `VLAN ↔ UserVlan` 标为「内容对应、结构不同」，不得据此声称 netparse 完全没有用户 VLAN 内容
+- **AND** PVLAN/CVLAN/VLAN 封装类型等其余差异分别按模板声明和真实 trace 归因，不笼统标为“模板未覆盖”
 
 #### Scenario: 适配器是纯函数
 
@@ -137,6 +146,78 @@ netparse 是**第三版**配置解析方案（前两版：TextFSM + Python 切�
 - **THEN** 它们与 `build_excel.COLUMNS` 的第一列**逐字相同**（含括号与单位，如 `接口入流限速(M)`）
 - **AND** 列顺序与 `COLUMNS` 一致
 
+---
+
+### Requirement: 报告给出全局汇总口径（值条数），不只给逐文件填充率
+
+系统 SHALL 在逐文件填充率之外，给出**全局汇总**的每列**值条数**（不按文件切分，把所有文件的记录汇总后统计每列的非空值个数）。
+
+**理由（此前样本，保留作历史诊断）**：第 10 列「IPv4静态路由明细」在**单文件粒度上可能缺乏分辨力** —— 实测 `SNANK-MC-CMNET-BAS03-SCEC-X16A`（1558 接口）**incumbent 自己就是 0/1558 = 0.0%**（该文件 79 条路由全无显式出接口）；此前 60 台样本的形态 2「出接口 + 下一跳」为 75 条，修前丢 72 条（96%）。120 文件样本的全局口径为 incumbent 第 10 列 **178** 条（分布在 42 个文件）vs netparse 修前约 **6** 条，差 **96.6%**。
+**最新统一复测见「报告给出根因分类」**：`check_route_forms.py` 的 60 文件、150 条显式出接口（排除 NULL0）结果与上述样本筛选/统计口径不同，必须并列标注、不得混算。
+
+**报告规则**：
+1. 每列**同时**给「逐文件填充率」与「全局值条数」；
+2. **判据**：全局值条数两侧差 > **20%** → **显式标红**（`flag: "RED"`），即使逐文件填充率都接近 0；
+3. 当某列两侧的逐文件填充率**都 < 1%** → 该列附注「**本列逐文件差异不具分辨力，请以全局值条数为准**」。
+
+#### Scenario: 全局值条数存在
+
+- **WHEN** 全量跑完
+- **THEN** 报告的 `global_column_value_count` 含 19 个列名，每列均有 `incumbent` / `netparse_before_fix` / `netparse_after_fix` 三栏值条数
+- **AND** 每栏值 = 把所有文件对应侧的该列非空值累加
+
+#### Scenario: 超过 20% 差距被标红
+
+- **WHEN** 某列的全局值条数两侧相差 > 20%
+- **THEN** 该列的 `flag` 为 `"RED"`，且 `flag_reason` 说明原因
+- **AND** **即使该列的逐文件填充率两侧都接近 0，也必须标红**
+
+#### Scenario: 无分辨力的列被标注
+
+- **WHEN** 某列两侧的逐文件填充率都 < 1%
+- **THEN** 该列的 `per_file_resolvable` 为 `false`
+- **AND** 该列有 `note` 说明"本列逐文件差异不具分辨力，请以全局值条数为准"
+
+#### Scenario: 第 10 列能被看见
+
+- **WHEN** 全量跑完
+- **THEN** 「IPv4静态路由明细」列的全局值条数显示 incumbent 远大于 netparse（修前）
+- **AND** 该列被标红
+- **AND** **报告不会显示"该列无差距"**
+
+---
+
+### Requirement: 19 列全部给「incumbent / 修前 / 修后」三栏
+
+系统 SHALL 支持 `--template <path>` 参数，并 SHALL 对 **19 列全部列**给出三栏：`incumbent` / `netparse_before_fix` / `netparse_after_fix`。逐文件填充率、全局填充率与全局值条数 SHALL 都遵守该三栏结构，不得只对预计受影响的列输出三栏。
+
+修前模板 SHALL 快照为 `baseline-template.cmdb`（= 改动前 `templates/huawei-vrp.cmdb` 的原样副本），修后模板 = 当前 `templates/huawei-vrp.cmdb`。
+
+**理由**：分栏能量化「补齐这 0.5 人日能买回多少」；全列对照还能发现模板修复对其他列的非预期影响，避免只验证第 10 列而漏掉回归。
+
+#### Scenario: 19 列三栏完整
+
+- **WHEN** 全量跑完
+- **THEN** `column_fill_rate` 与 `global_column_value_count` 的列键集合均与 `build_excel.COLUMNS` 的 19 列完全一致
+- **AND** 每列均有 `incumbent` / `netparse_before_fix` / `netparse_after_fix` 三栏，包括预计不受模板改动影响的列
+
+#### Scenario: 静态路由修复效果可对照
+
+- **WHEN** 检查「IPv4静态路由明细」列
+- **THEN** 修前全局值条数差与修后全局值条数差分别计算、分别标注
+- **AND** 最新 `check_route_forms.py` 复测结果与该三栏结论并列呈现，不使用“修前约 3 条”的此前样本数字替代最新 150 条口径
+
+#### Scenario: 修前模板可复现
+
+- **WHEN** 用 `--template .devforge/spec/changes/netparse-v3-diff-and-mask/baseline-template.cmdb` 跑
+- **THEN** 产出与"修前"栏一致的数字
+- **AND** 该快照文件的内容与改动前的 `templates/huawei-vrp.cmdb` 逐字节相同
+
+#### Scenario: 两栏都标注来源
+
+- **WHEN** 读报告的三栏
+- **THEN** 每栏都标明它来自哪份模板/产物（不是无来源的数字）
+
 #### Scenario: 限速列的取值口径
 
 - **WHEN** 检查报告中"接口入流限速(M)"列的填充率
@@ -171,22 +252,26 @@ netparse 是**第三版**配置解析方案（前两版：TextFSM + Python 切�
 - **netparse 缺什么**（incumbent 有、netparse 无）
 - **netparse 多什么**（netparse 有、incumbent 无）
 
-**SHALL NOT** 只报缺口。理由：实测 netparse 在接口基础属性上**更强**（多出 `AdminStatus` `Mtu` `Speed` `Duplex` `Dcn` `Type` `VlanType` `UserVlan` `AccessVlan` `PortLinkType` `TrunkAllowPass` `CarrierDownHoldTime` `Statistic` `Isis` `Vrrp` `Track` `EthTrunkMember`），而 incumbent 一个都没有 —— **只报缺口的报告会系统性低估 netparse**。
+**SHALL NOT** 只报缺口。接口级字段口径 MUST 统一为：**netparse 15 / incumbent 10 / 共有 4 / netparse 独有 11 / incumbent 独有 6**。只统计接口记录的**直接子键**，**不含子集合内部字段**（如 `Statistic.*`、`Vrrp.*`、`IpAddress.*` 不展开为独立接口级字段）；按业务语义对应，不按命名风格机械比较。此前“多 17 个”废弃，结论统一为“多 11 个”。
 
-多出来的字段虽不在 19 列台账内，但它们是"更丰富的 CI 模型"的论据，SHALL 单列。
+netparse 独有 11 项 MUST 为：`AdminStatus` `CarrierDownHoldTime` `Dcn` `Duplex` `EthTrunkMember` `Isis` `Mtu` `Speed` `Statistic` `Type` `UserVlan`。多出来的字段虽不在 19 列台账内，但 SHALL 单列其对 CI 建模的价值。
+
+`VLAN ↔ UserVlan` SHALL 单列为「内容对应、结构不同」：incumbent 的 `VLAN` 是含 `type/user-vlan/QinQ/dot1q` 的嵌套对象，netparse 的 `UserVlan` 是标量。集合清单保留原始直接子键差异，但结论不得把该结构差异说成 netparse 完全没有用户 VLAN 内容；更细的 PVLAN/CVLAN/VLAN 封装类型差异按证据分别归因。
 
 #### Scenario: 双向字段清单
 
 - **WHEN** 全量跑完
 - **THEN** 报告的 `part2_capability.interface_level_fields` 含 `matched` / `only_incumbent` / `only_netparse` 三个清单
-- **AND** `coverage` 给出三方的数量
+- **AND** `coverage` 明确给出 `incumbent=10 / netparse=15 / matched=4 / only_netparse=11 / only_incumbent=6`
+- **AND** 报告注明统计口径为“接口记录直接子键，不含子集合内部字段”
 
 #### Scenario: 已知基线被复现
 
 - **WHEN** 在同一份 1558 接口的配置上运行
 - **THEN** `matched` 恰为 4 项（`name` / `description` / `IP` / `vpn`）
 - **AND** `only_incumbent` 恰为 6 项（`QOS` / `VLAN` / `bas` / `multicast` / `qos-profile` / `traffic-policy`）
-- **AND** `only_netparse` 非空且不少于 10 项
+- **AND** `only_netparse` 恰为 11 项（`AdminStatus` / `CarrierDownHoldTime` / `Dcn` / `Duplex` / `EthTrunkMember` / `Isis` / `Mtu` / `Speed` / `Statistic` / `Type` / `UserVlan`）
+- **AND** `content_correspondence_diff_shape` 含 `VLAN ↔ UserVlan`，并说明“内容对应、结构不同”
 
 #### Scenario: 集合级结构差异被记录
 
@@ -198,6 +283,54 @@ netparse 是**第三版**配置解析方案（前两版：TextFSM + Python 切�
 
 - **WHEN** 读报告的 `part2_capability.extra_value_note`
 - **THEN** 它明确指出 netparse 多出的接口级字段不在 19 列台账内，以及它们对 CI 建模的价值
+
+---
+
+### Requirement: 报告给出**资产类别覆盖对比**（谁覆盖的资产种类多）
+
+系统 SHALL 在段二（能力口径）给出**两侧各覆盖了哪些资产类别**的对比。
+
+**分类必须是三分类**（实测依据，见下）：
+
+| 分类 | 数量 | 内容 |
+|---|---|---|
+| **共有 · 结构同** | 3 | `Device↔device`、`Interfaces↔interfaces`、`RouteStatics↔route-static` |
+| **共有 · 结构不同（同一业务对象）** | 2 | `IpAddress↔interfaces[].IP`、`VpnInstances↔interfaces[].vpn` |
+| **netparse 真正独有** | **7** | `EthTrunkMember` `Bgp` `BgpPeers` `Acls` `AclRules` `Nqas` `NqaSessions` |
+| **incumbent 真正独有** | 1 | `qos-profile`（顶层命名空间定义） |
+
+**⇒ netparse 12 类 = 3 + 2 + 7；incumbent 4 类 = 3 + 0 + 1。**
+
+**⚠️ 为什么不能简单说"netparse 独有 9 类"**：实测 incumbent 的 `interfaces[]` 子键只有 **10 种** —— `name` / `description` / `VLAN` / `bas` / `IP` / `vpn` / `multicast` / `traffic-policy` / `QOS` / `qos-profile`（120 个产物抽样）⇒ **`IP` 出现在 120/120 个产物里（26831 次）、`vpn` 在 117/120（21486 次）**。
+⇒ **`IpAddress` 与 `VpnInstances` 的业务内容 incumbent 是有的**，netparse 只是把它们提升成了**独立顶层集合**（结构差异，不是内容差异）。
+⇒ **把它们算作"netparse 独有"会高估 2 类**；一旦有人打开 incumbent 的 JSON 就会发现 IP 数据明明在那儿 ⇒ **整份报告的可信度受损**。
+
+**⇒ 报告 SHALL 给出 netparse 真正独有类别清单 + 每个类别在真实语料里的实例数。**
+
+#### Scenario: 资产类别清单与三分类
+
+- **WHEN** 全量跑完
+- **THEN** 报告的 `part2_capability.asset_categories` 含两侧各自的类别清单与**三分类计数**
+- **AND** 计数为：netparse `total=12 / shared_same_shape=3 / shared_diff_shape=2 / only=7`；incumbent `total=4 / shared_same_shape=3 / shared_diff_shape=0 / only=1`
+
+#### Scenario: 真正独有类别的实例数
+
+- **WHEN** 读 `netparse_only_instances`
+- **THEN** 它恰含 **7** 项：`EthTrunkMember` `Bgp` `BgpPeers` `Acls` `AclRules` `Nqas` `NqaSessions`
+- **AND** 每项含实例数（条数，不是行数比例）
+- **AND** **不含** `IpAddress` 与 `VpnInstances`（它们属"共有·结构不同"）
+
+#### Scenario: 结构不同的两类被正确归位
+
+- **WHEN** 读 `asset_categories._taxonomy.shared_diff_shape`
+- **THEN** 它恰含 `IpAddress↔interfaces[].IP` 与 `VpnInstances↔interfaces[].vpn`
+- **AND** **不**出现在 `netparse_only` 里
+
+#### Scenario: 结论两侧都报
+
+- **WHEN** 读报告的结论段
+- **THEN** 它同时给出**负面**（台账列差 N）与**正面**（资产类别真正独有 7 类、另有 2 类是同一业务对象不同层级、接口级字段多 11 个）两部分
+- **AND** **不**只报其中一面
 
 ---
 
@@ -234,7 +367,7 @@ netparse 是**第三版**配置解析方案（前两版：TextFSM + Python 切�
 
 - **WHEN** 第 13 列（域名名称）两侧填充率不同
 - **THEN** 报告的 `diff_samples["域名名称"]` 非空
-- **AND** 每条样本含 `device` / `interface` / `incumbent` / `netparse` 四个字段
+- **AND** 每条样本含 `device` / `interface` / `incumbent` / `netparse_before_fix` / `netparse_after_fix` 五个字段
 
 #### Scenario: 无差异的列不产生样本
 
@@ -248,40 +381,74 @@ netparse 是**第三版**配置解析方案（前两版：TextFSM + Python 切�
 
 ---
 
-### Requirement: 报告给出根因分类
+### Requirement: 报告给出有真实证据的根因分类
 
-系统 SHALL 为每一个**未填满**的列给出根因分类，取值 ∈：`模板未覆盖该命令`、`字段丢失`、`join缺失`、`语义不同`（可多值）。
+系统 SHALL 为每一个**未填满**的列给出根因分类，取值 ∈：`模板未覆盖该命令`、`字段丢失`、**`整条记录丢失`**、`join缺失`、`语义不同`、`待人工判定`。
 
-根因 SHALL 由**自动判定**得出，不得人工填写：
+**自动根因的证据门禁**：不得只凭映射表的 `source=None`、`root_cause_if_empty` 或其他人工常量自动断言根因。这些常量只是待验证假设。每个自动分类 MUST 附 `evidence`，至少含：
+1. **真实输入证据**：文件标识、原始行号及必要的脱敏命令样本；
+2. **模板声明证据**：相关集合、目标字段声明、候选规则标识/文本位置；
+3. **真实 trace 证据**：该行的命中/失配结果、命中集合与规则、产生记录情况，以及命令族 `total_lines/hit_lines`。
+证据不足时 SHALL 输出 `root_cause: "待人工判定"` 与 `evidence_status: "INSUFFICIENT"`，不得猜测。
 
-- `模板未覆盖该命令`：该列对应的命令族在**引擎内 trace**（`probe_stack.py` 的 `run(colls, lines, trace=...)`）中命中数为 0；
-- `字段丢失`：命令被模板命中，但模板未捕获该列所需的字段；
-- `join缺失`：字段齐备，但资产层需要跨集合按名 join（如限速需 join 顶层 `qos-profile`）；
-- `语义不同`：两侧都有值但值不等。
+**分类判据**：
+- `模板未覆盖该命令`：真实命令族在 trace 中 0 命中，且模板声明检查确认无对应捕获规则；
+- `字段丢失`：同一真实行命中规则并产生记录，但模板未声明/未捕获目标字段；
+- `整条记录丢失`：真实配置可定位 incumbent 有记录而 netparse 无对应记录，候选规则匹配/失配结果能解释缺失；不得把“trace 0 命中”同时描述成“命令被模板命中”；
+- `join缺失`：**单列**。真实 trace 与输出记录证明所需原始字段已捕获且两侧原始值可对应，仅资产层缺少跨集合关联；附源/目标集合、关联键、join 前后条数。原始字段未捕获时不得归为 join 缺失；
+- `语义不同`：两侧原始字段可对应且都有值，但值不同。
 
-#### Scenario: 根因自动判定
+同一列的不同样本允许不同根因，但每个根因 SHALL 有自己的证据集合；不得用无证据的多值标签掩盖分类不确定性。
 
-- **WHEN** 某列填充率为 0，且其对应命令族在引擎 trace 中命中 0 行
+**静态路由实测必须并列保留两组口径**：
+- **最新结果（`tools/check_route_forms.py`）**：**60/60 文件修后与 incumbent 一致**；60 文件中显式出接口（**排除 NULL0**）共 **150 条**，修前丢 **150 条（100%）**，修后丢 **0 条**。
+- **此前样本**：60 台、20250824 快照、1651 条 `ip route-static` 中，形态 2「出接口 + 下一跳」75 条，修前丢 72 条（96%）；该数字只作历史诊断，不与最新 150 条结果混算。
+- **更早 18.1% 估算废弃**：`interface NULL0` 污染了“已知接口名集合”，把 NULL0 下一跳误算成显式出接口。后续判定 MUST 排除 `NULL0`。
+
+#### Scenario: 模板未覆盖的自动判定有证据
+
+- **WHEN** 某列填充率为 0，真实命令族在引擎 trace 中命中 0 行，且模板声明检查无对应捕获规则
 - **THEN** 报告该列的 `root_cause` 包含 `模板未覆盖该命令`
-- **AND** `evidence` 含该命令族的总行数与命中行数
+- **AND** `evidence` 含真实文件/行号或脱敏样本、模板检查结果、命令族总行数与命中行数、真实 trace 摘要
+
+#### Scenario: source 为空不能单独触发根因
+
+- **WHEN** 映射条目为 `source=None`，但没有模板声明和真实 trace 证据
+- **THEN** 工具不得自动输出 `模板未覆盖该命令` 或 `字段丢失`
+- **AND** 输出 `root_cause="待人工判定"`、`evidence_status="INSUFFICIENT"`
 
 #### Scenario: 字段丢失的判定
 
-- **WHEN** 某列填充率为 0，其命令族在 trace 中**有命中**，但模板未声明该列所需字段
+- **WHEN** 某真实行在 trace 中命中规则并产生记录，但模板声明缺少该列所需字段
 - **THEN** `root_cause` 包含 `字段丢失`
-- **AND** `evidence.source` 指明缺哪个字段
+- **AND** `evidence` 指明缺失字段、相关集合/规则、真实行及产生的记录
+
+#### Scenario: join 缺失单列且不与捕获缺失混淆
+
+- **WHEN** 真实 trace 与 netparse 记录证明关联所需原始字段已捕获，仅资产层缺少跨集合 join
+- **THEN** `root_cause` 单列 `join缺失`
+- **AND** `evidence` 含源/目标集合、关联键及 join 前后条数
+- **AND** 若原始字段未捕获，则不得同时标注 `join缺失`
 
 #### Scenario: 根因与工作量对应
 
-- **WHEN** 某列的根因是 `字段丢失`
+- **WHEN** 某列的根因经证据门禁判为 `字段丢失`
 - **THEN** 该列的 `workload_estimate.per_column` 条目给出"要改哪个模板的哪条规则"
+- **AND** 证据不足的列进入待诊断工作量，不套用自动人日常量
+
+#### Scenario: 静态路由最新结果被记录
+
+- **WHEN** 运行 `tools/check_route_forms.py` 并把结果写入报告
+- **THEN** 报告记录 60/60 文件修后一致
+- **AND** 记录显式出接口（排除 NULL0）150 条、修前丢 150（100%）、修后丢 0
+- **AND** 此前 75/72/96% 明确标为“此前样本”，不与最新结果混算
 
 #### Scenario: 已知静态路由出接口缺口被正确归类
 
-- **WHEN** 处理一个含 IPv4 静态路由的设备
-- **THEN** 第 10 列（IPv4静态路由明细）的 `root_cause` 包含 `字段丢失`
-- **AND** `evidence` 说明缺的是路由的**出接口**字段 —— 该字段由命令层在解析时拆出并存入（不是资产层反查算出来的）；`build_excel.build_route_index` 读取它并**跳过没有它的路由**。即：**"把路由挂到接口行"是资产层的 join（已存在），"解析出出接口"是命令层的事（netparse 缺）**
-- **AND** 报告同时记录"带显式出接口的路由当前被 netparse 整条丢弃"这一事实
+- **WHEN** 处理修前模板生成的第 10 列缺口
+- **THEN** 报告按真实行分别区分 `字段丢失` 与 `整条记录丢失`
+- **AND** `evidence` 说明出接口由命令层解析时拆出，`build_excel.build_route_index` 只读取它并跳过没有它的路由
+- **AND** 修后模板结果与最新 60 文件复测共同证明修复效果，不把修前根因原样套到修后结果
 
 ---
 
@@ -339,24 +506,63 @@ netparse 是**第三版**配置解析方案（前两版：TextFSM + Python 切�
 
 ---
 
-### Requirement: 支持抽样冒烟模式
+### Requirement: 支持按月轮转的分层抽样冒烟模式
 
-系统 SHALL 支持 `--sample N` 模式，随机抽取 N 个文件跑完整流程，用于快速验证工具本身可用。
+系统 SHALL 支持 `--sample N` 模式，抽取 N 个文件跑完整流程，用于快速验证工具本身可用。
 
-抽样 SHALL 覆盖全部 26 个月目录（避免只命中某一类格式）。
+抽样 SHALL 采用**按月轮转分层**：先确定存在至少 1 个可处理文件对的月份集合 `M`，以固定 `sample_seed` 打乱月份顺序；每轮从每个尚未耗尽文件的月份随机抽 1 个文件（月内不放回），循环至抽满 N 个或候选耗尽。N 不超过候选文件总数时，期望不同月份数为 **`expected_distinct_months=min(N,len(M))`**，当前最多 26 个月。报告 SHALL 记录 `available_months`、`expected_distinct_months`、实际 `months_covered`、抽样算法与 `sample_seed`。
+
+该期望取代“20 个样本必须覆盖全部 26 个月”的矛盾要求。抽样报告 SHALL 注明其为月份分层样本，不得把抽样填充率直接宣称为全量无偏估计。
 
 #### Scenario: 抽样跑通
 
-- **WHEN** 以 `--sample 20` 运行
+- **WHEN** 以 `--sample 20` 运行且可选月份不少于 20、候选文件不少于 20
 - **THEN** 处理 20 个文件，产出与全量同结构的报告
+- **AND** `expected_distinct_months=20` 且实际 `len(months_covered)=20`
 - **AND** 运行时间显著短于全量
 
-#### Scenario: 抽样覆盖各月
+#### Scenario: 样本量小于可选月数
 
-- **WHEN** 抽样结束
-- **THEN** 报告的 `meta.months_covered` 列出的月份目录数 ≥ 20（当样本量允许）
+- **WHEN** `N < len(M)` 且候选文件充足
+- **THEN** 实际不同月份数等于 N，而不是被要求等于 `len(M)`
+
+#### Scenario: 样本量大于可选月数
+
+- **WHEN** `N > len(M)` 且候选文件不少于 N
+- **THEN** 实际不同月份数等于 `len(M)`，其余样本按月轮转继续抽取
+
+#### Scenario: 可选月份或文件不足时显式报告
+
+- **WHEN** 可选月份数或候选文件数不足以达到 N
+- **THEN** 工具报告实际可选集合与候选总数，不伪造月份或重复文件凑数
+- **AND** `expected_distinct_months` 按实际 `len(M)` 计算
 
 ---
+
+### Requirement: 报告的 meta 段带脱敏统计（模板标注完整度）
+
+系统 SHALL 在报告的 `meta` 段给出脱敏统计 `l1_hits` 与 `l2_hits`（来自 `masking.STATS.as_dict()`）。
+
+**`l2_hits` 是「模板标注完整度」的度量**：L2（形态兜底）命中数远大于 L1（显式标注）⇒ **模板漏标了 secret 字段**。实测真实文件 **L1=3/4/4/9、L2=0** ⇒ 当前模板对已抓到的凭据字段标注完整、无漏标。
+
+⚠️ **`STATS` 是 per-run 的**（`run()` 开头会 `STATS.reset()`）⇒ 工具 SHALL **自己累加**每个文件跑完后的统计，不能只在最后读一次。
+
+#### Scenario: meta 含脱敏统计
+
+- **WHEN** 全量跑完
+- **THEN** 报告的 `meta` 含 `l1_hits` 与 `l2_hits`
+- **AND** 它们的和 = 全量运行中被遮蔽的值总数
+
+#### Scenario: l2_hits 反映模板标注完整度
+
+- **WHEN** 某个模板漏标了 secret 字段（该字段靠 L2 形态兜底才被遮蔽）
+- **THEN** `l2_hits > 0`，而对应字段的 L1 命中数不增加
+- **AND** 报告能据此回答"模板还需不需要补 secret 标注"
+
+#### Scenario: 统计跨文件累加
+
+- **WHEN** 跑多个文件
+- **THEN** `meta.l1_hits` / `meta.l2_hits` 是**各文件之和**，不是最后一个文件的值
 
 ### Requirement: 映射表有最小样例回归
 
@@ -377,3 +583,17 @@ netparse 是**第三版**配置解析方案（前两版：TextFSM + Python 切�
 
 - **WHEN** 适配器处理含密码的 netparse 结果
 - **THEN** 适配器输出中的密码字段是掩码串（脱敏在引擎已完成，适配器不做二次处理也不还原明文）
+
+#### Scenario: ⭐ 段一无密码列（incumbent 侧无 peer/BGP 段）
+
+**实测事实（2026-11-19 复核）**：incumbent 产物的顶层键**恒为 5 个** —— `device_name` / `device_ip` / `interfaces` / `route-static` / `qos-profile`（401 个产物抽样，顶层键并集一致）。
+**incumbent 的 `huawei_vrp.fsm` 不抓 BGP peer** ⇒ 其产物里**既没有密码、也没有 peer 段**（实测：一个配置原文含 58 行 `password cipher` 的设备，产物里 `%^%#` 命中 False、`password` 命中 False、`peer` 命中 False）。
+
+**⇒ 段一（19 列台账）根本没有密码列**，不涉及两侧脱敏对齐；**段二（能力口径）会显示「netparse 独有 Bgp / BgpPeers 能力」—— 这是能力更强的证据，不是差异项**。
+
+**⇒ 映射表 SHALL NOT 添加 peer / Password 相关行** —— incumbent 侧无字段可映射，加了会写出**恒为空的映射**（假缺口）。
+
+- **WHEN** 构建映射表
+- **THEN** 映射表中**不含** `Bgp` / `BgpPeers` / `Password` 等 incumbent 侧不存在的目标字段
+- **AND** 段一报告里不出现任何与密码相关的列或结论
+- **AND** 段二的 `asset_categories.netparse_only` 清单里**包含** `Bgp` / `BgpPeers`（作为 netparse 独有的资产类别；不与接口直接子键的 `only_netparse` 混用）

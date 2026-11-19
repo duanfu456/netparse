@@ -270,7 +270,13 @@ Statistic   type(dict) desc(流量统计)
 
 ### 3.7 字段类型
 
-`str` / `int` / `float` / `bool` / `dict`（单个对象）/ `list`（数组，默认）
+`str` / `int` / `float` / `bool` / `dict`（单个对象）/ `list`（数组，默认）/ `secret`（凭据）。
+
+`secret` 与其他类型互斥。捕获值在引擎写入时立即替换为固定掩码 `******`：
+- L1：字段显式声明 `type(secret)`；不得与 `option(Key)` 同用，也不得被 `inherit=` 引用。
+- L2：即使模板漏标，华为 `%\^%#...%\^%#` 等密文形态也会被兜底遮蔽。
+- CLI 可用 `--mask-value <字符串>` 修改掩码，或 `--no-mask-heuristic` 关闭 L2（生产不建议）。
+- `PasswordType type(str)` 只保存 `cipher` 等类型，不是密码；`Password type(secret)` 才是凭据。
 
 ### 3.8 集合类型
 
