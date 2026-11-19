@@ -1,0 +1,233 @@
+# ══════════════════════════════════════════════════════════════════
+# 模板：华为 VRP → CMDB 资产
+#
+# 设备：华为 VRP V800R023C00SPC100 及以上
+# 验证样本：SNANK-MC-CMNET-BRAS22-NHXL-X16A（802 接口 / BRAS）
+#
+# 结构：集合用缩进表达层级，每层有自己的 [value] / [rule]，
+#       以及 start（进入）/ end（退出）。
+#
+# 语义说明见 docs/TEMPLATE-GUIDE.md
+# ══════════════════════════════════════════════════════════════════
+
+# ── 设备级（无 start = 栈底常驻，始终生效）───────────────
+Device type(dict) desc(设备)
+[value]
+Name      type(str) reg(\S+) desc(设备名)
+SysName   type(str) reg(\S+) desc(系统名)
+Version   type(str) reg(\S+) desc(版本)
+RouterId  type(str) reg(\S+) desc(Router ID)
+[rule]
+^!Software Version\s+${Version}\s*$
+^sysname\s+${SysName}\s*$
+^router id\s+${RouterId}\s*$
+
+# ── 接口 ──────────────────────────────────────────────
+# 实测 802 个：Eth-Trunk 664（其中 620 个是 Eth-TrunkN.MMM 子接口）
+#               GigabitEthernet 120 / HP-GE 4 / Virtual-* 7
+#               Vlanif 1 / LoopBack 1 / NULL0 1
+Interfaces type(list) start(^interface\s+) desc(接口集合)
+[value]
+Name          type(str)  reg(\S+) desc(接口名) option(Key)
+Type          type(str)  default(unknown) desc(接口类型)
+AdminStatus   type(str)  default(up) reg(up|down) desc(管理状态)
+Description   type(str)  reg(.+) desc(描述)
+Mtu           type(int)  reg(\d+) desc(MTU)
+Speed         type(str)  reg(\S+) desc(速率)
+Duplex        type(str)  reg(\S+) desc(双工)
+VlanType      type(str)  reg(\S+) desc(VLAN 类型)
+UserVlan      type(int)  reg(\d+) desc(用户 VLAN)
+AccessVlan    type(int)  reg(\d+) desc(Access VLAN)
+Dcn           type(bool) default(false) desc(DCN 特性)
+CarrierDownHoldTime type(int) reg(\d+) desc(掉线保持时间)
+PortLinkType  type(str)  reg(\S+) desc(端口链路类型)
+TrunkAllowPass type(str) reg(\S+) desc(Trunk 放行 VLAN)
+IpBindingVpn  type(str)  reg(\S+) desc(绑定 VPN 实例)
+Statistic     type(dict) desc(流量统计)
+  Enable type(bool) desc(统计开关)
+  Mode   type(str)  reg(\S+) desc(统计模式)
+Isis          type(dict) desc(ISIS)
+  Enable        type(int) reg(\d+) desc(进程号)
+  CircuitType   type(str) reg(\S+) desc(电路类型)
+  CircuitLevel  type(str) reg(\S+) desc(电路层级)
+  Authentication type(dict) desc(认证)
+    Mode    type(str) reg(\S+) desc(认证模式)
+    Algorithm type(str) reg(\S+) desc(算法)
+Vrrp          type(list) desc(VRRP)
+  Vrid     type(int) reg(\d+) desc(VRID)
+  Priority type(int) reg(\d+) desc(优先级)
+Track         type(list) desc(track)
+  Id     type(int) reg(\d+) desc(track id)
+  Type   type(str) reg(\S+) desc(类型)
+  Target type(str) reg(\S+) desc(目标)
+[rule]
+^interface\s+${Name}
+^\s*description\s+${Description}\s*$
+^\s*mtu\s+${Mtu}\s*$
+^\s*speed\s+${Speed}\s*$
+^\s*duplex\s+${Duplex}\s*$
+^\s*undo shutdown\s*$                      -> AdminStatus=up
+^\s*shutdown\s*$                           -> AdminStatus=down
+^\s*undo dcn\s*$                           -> Dcn=false
+^\s*vlan-type\s+${VlanType}\s*$
+^\s*user-vlan\s+${UserVlan}\s*$
+^\s*port default vlan\s+${AccessVlan}\s*$
+^\s*carrier down-hold-time\s+${CarrierDownHoldTime}\s*$
+^\s*port link-type\s+${PortLinkType}\s*$
+^\s*port trunk allow-pass\s+${TrunkAllowPass}\s*$
+^\s*ip binding vpn-instance\s+${IpBindingVpn}\s*$
+^\s*undo ip binding vpn-instance\s+${IpBindingVpn}\s*$
+^\s*statistic enable\s*$                   -> Statistic.Enable=true
+^\s*statistic mode\s+${Statistic.Mode}\s*$  -> Statistic.Mode
+^\s*isis enable\s+${Isis.Enable}\s*$
+^\s*isis circuit-type\s+${Isis.CircuitType}\s*$
+^\s*isis circuit-level\s+${Isis.CircuitLevel}\s*$
+^\s*vrrp vrid\s+${Vrrp.Vrid}\s+${Vrrp.Priority}\s*$
+^\s*track\s+${Track.Id}\s+${Track.Type}\s+${Track.Target}\s*$
+
+  # ── 接口 IP（子层：命中 start 进入，下一个 interface 到来时退出）──
+  IpAddress type(list) start(^\s*ip(v6)? address) desc(接口IP)
+  [value]
+  Address type(str) reg([^/\s]+) desc(地址)
+  Mask    type(str) reg(\S+) desc(掩码)
+  Family  type(str) reg(ipv4|ipv6) desc(地址族)
+  Mode    type(str) reg(\S+) desc(自动地址模式)
+  [rule]
+  ^\s*ip address\s+${Address}\s+${Mask}(?:\s+sub)?\s*$   -> Family="ipv4"
+  ^\s*ipv6 address\s+${Address}/${Mask}\s*$               -> Family="ipv6"
+  ^\s*ipv6 address\s+auto\s+${Mode}\s*$                   -> Address="auto",Family="ipv6"
+
+  # ── 聚合口成员关系（子层）────────────────────────────
+  EthTrunkMember type(list) start(^\s*eth-trunk) desc(聚合成员)
+  [value]
+  Trunk type(str) reg(\S+) desc(所属聚合口)
+  [rule]
+  ^\s*eth-trunk\s+${Trunk}\s*$
+
+# ── 静态路由 ─────────────────────────────────────────
+RouteStatics type(list) start(^ip route-static) desc(静态路由)
+[value]
+Prefix      type(str) reg(\S+) desc(前缀) option(Key)
+Mask        type(str) reg(\S+) desc(掩码) option(Key)
+NextHop     type(str) reg(\S+) desc(下一跳)
+Preference  type(int) reg(\d+) desc(优先级)
+Description type(str) reg(.+) desc(描述)
+VpnInstance type(str) reg(\S+) desc(所属 VPN 实例) option(Key)
+[rule]
+^\s*ip route-static\s+${Prefix}\s+${Mask}\s+${NextHop}
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?\s*$
+      -> RouteStatics{Prefix,Mask,NextHop,Preference,Description}
+^\s*ip route-static\s+vpn-instance\s+${VpnInstance}\s+${Prefix}\s+${Mask}\s+${NextHop}
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?\s*$
+      -> RouteStatics{Prefix,Mask,NextHop,Preference,Description,VpnInstance}
+
+# ── VPN 实例 ─────────────────────────────────────────
+VpnInstances type(list) start(^ip vpn-instance) desc(VPN实例)
+[value]
+Name               type(str) reg(\S+) desc(名称) option(Key)
+RouteDistinguisher type(str) reg(\S+) desc(RD)
+VpnTargets         type(list) desc(引用的VPN目标)
+  Rd        type(str) reg(\S+) desc(RD)
+  Direction type(str) reg(\S+) desc(方向)
+IpFamilies         type(list) desc(地址族)
+  Family type(str) reg(\S+) desc(地址族)
+[rule]
+^ip vpn-instance\s+${Name}
+^\s*route-distinguisher\s+${RouteDistinguisher}\s*$
+^\s*vpn-target\s+${VpnTargets.Rd}\s+${VpnTargets.Direction}\s*$
+^\s*ipv4-family\s*$                        -> IpFamilies{Family="ipv4"}
+^\s*ipv6-family\s*$                        -> IpFamilies{Family="ipv6"}
+
+# ── BGP ──────────────────────────────────────────────
+Bgp type(dict) start(^bgp\s+) desc(BGP)
+[value]
+AsNumber       type(int) reg(\d+) desc(AS 号)
+RouterId       type(str) reg(\S+) desc(Router ID)
+Private4ByteAs type(bool) default(true) desc(私有 4 字节 AS)
+Groups         type(list) desc(邻居组)
+  Name type(str) reg(\S+) desc(组名)
+  Type type(str) reg(internal|external) desc(类型)
+[rule]
+^bgp\s+${AsNumber}
+^\s*router-id\s+${RouterId}\s*$
+^\s*group\s+${Groups.Name}\s+internal\s*$  -> Groups{Name,Type="internal"}
+^\s*group\s+${Groups.Name}\s+external\s*$  -> Groups{Name,Type="external"}
+^\s*private-4-byte-as disable\s*$         -> Private4ByteAs=false
+
+  # ── BGP 邻居（子层：同一 peer 的多行按 Key 合并）──────
+  BgpPeers type(list) start(^\s*peer) desc(BGP邻居)
+  [value]
+  Peer             type(str) reg(\S+) desc(对端) option(Key)
+  AsNumber         type(int) reg(\d+) desc(对端 AS)
+  Group            type(str) reg(\S+) desc(所属组)
+  Description      type(str) reg(.+) desc(描述)
+  ConnectInterface type(str) reg(\S+) desc(连接接口)
+  PasswordType     type(str) reg(\S+) desc(密码类型)
+  Password         type(str) reg(.+) desc(密码)
+  [rule]
+  ^\s*peer\s+${Peer}\s+as-number\s+${AsNumber}\s*$              -> BgpPeers{Peer,AsNumber}
+  ^\s*peer\s+${Peer}\s+group\s+${Group}\s*$                      -> BgpPeers{Peer,Group}
+  ^\s*peer\s+${Peer}\s+description\s+${Description}\s*$          -> BgpPeers{Peer,Description}
+  ^\s*peer\s+${Peer}\s+connect-interface\s+${ConnectInterface}\s*$ -> BgpPeers{Peer,ConnectInterface}
+  ^\s*peer\s+${Peer}\s+password\s+cipher\s+${Password}\s*$       -> BgpPeers{Peer,PasswordType="cipher",Password}
+
+# ── ACL ──────────────────────────────────────────────
+Acls type(list) start(^acl number) desc(ACL)
+[value]
+Number      type(int) reg(\d+) desc(ACL 号) option(Key)
+Description type(str) reg(.+) desc(描述)
+[rule]
+^acl number\s+${Number}
+^\s*description\s+${Description}\s*$
+
+  # ── ACL 规则（子层）────────────────────────────────
+  AclRules type(list) start(^\s*rule) desc(ACL规则)
+  [value]
+  Sequence        type(int)  reg(\d+) desc(序号) option(Required)
+  Action          type(str)  reg(permit|deny) desc(动作)
+  Source          type(str)  reg(\S+) desc(源地址)
+  SourceMask      type(str)  reg(\S+) desc(源掩码)
+  Destination     type(str)  reg(\S+) desc(目的地址)
+  DestinationMask type(str)  reg(\S+) desc(目的掩码)
+  [rule]
+  ^\s*rule\s+${Sequence}\s+permit\s+source\s+${Source}\s+${SourceMask}\s*$
+        -> AclRules{Sequence,Action="permit",Source,SourceMask}
+  ^\s*rule\s+${Sequence}\s+deny\s+source\s+${Source}\s+${SourceMask}\s*$
+        -> AclRules{Sequence,Action="deny",Source,SourceMask}
+  ^\s*rule\s+${Sequence}\s+permit\s+destination\s+${Destination}\s+${DestinationMask}\s*$
+        -> AclRules{Sequence,Action="permit",Destination,DestinationMask}
+  ^\s*rule\s+${Sequence}\s+deny\s+destination\s+${Destination}\s+${DestinationMask}\s*$
+        -> AclRules{Sequence,Action="deny",Destination,DestinationMask}
+  ^\s*rule\s+${Sequence}\s+permit\s*$   -> AclRules{Sequence,Action="permit"}
+  ^\s*rule\s+${Sequence}\s+deny\s*$     -> AclRules{Sequence,Action="deny"}
+
+# ── NQA ──────────────────────────────────────────────
+# 实测格式：nqa twamp-light / nqa test-instance ls.dev <id>
+# Name 常缺失（只有 test-instance 才有名字）→ 不设 Key，否则记录会被丢弃
+Nqas type(list) start(^nqa\s) desc(NQA)
+[value]
+Name       type(str) reg(\S+) desc(名称)
+Type       type(str) reg(\S+) desc(类型)
+TestType   type(str) reg(\S+) desc(测试类型)
+ProbeCount type(int) reg(\d+) desc(探测次数)
+[rule]
+^nqa\s+(?P<Type>\S+)(?:\s+(?P<Name>\S+))?\s*$
+^\s*test-type\s+${TestType}\s*$
+^\s*probe-count\s+${ProbeCount}\s*$
+
+  # ── NQA 会话（子层）──────────────────────────────
+  NqaSessions type(list) start(^\s*test-session) desc(NQA会话)
+  [value]
+  SessionId          type(int) reg(\d+) desc(会话号)
+  LocalIp            type(str) reg(\S+) desc(本地 IP)
+  RemoteIp           type(str) reg(\S+) desc(远端 IP)
+  LocalPort          type(int) reg(\d+) desc(本地端口)
+  RemotePort         type(int) reg(\d+) desc(远端端口)
+  LinkBundleInterface type(str) reg(\S+) desc(绑定接口)
+  [rule]
+  ^\s*test-session\s+${SessionId}\s+local-ip\s+${LocalIp}\s+remote-ip\s+${RemoteIp}
+        \s+local-port\s+${LocalPort}\s+remote-port\s+${RemotePort}
+        \s+link-bundle-interface\s+${LinkBundleInterface}\s*$
+        -> NqaSessions{SessionId,LocalIp,RemoteIp,LocalPort,RemotePort,LinkBundleInterface}

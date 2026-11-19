@@ -1,0 +1,36 @@
+# Nokia SR OS / TiMOS 模板 —— 验证「同一套引擎跨厂商」
+#
+# 设备：Nokia 7950 XRS（TiMOS-C-16.0.R10）
+# 样本：SNBJI-PC-CMNET-RT02-7950XRS20
+#
+# 与华为/中兴的格式差异：
+#   缩进 4 空格/级 · 无分隔符 · 用 exit 关键字退出块 · 名称带引号
+#   接口在 3 个不同缩进层级（18/22/26）→ start 正则不能锚定行首
+
+# ── 接口 ──────────────────────────────────────────────
+NokiaInterfaces type(list) start(^\s*interface\s+) desc(接口集合)
+[value]
+Name        type(str) reg(\S+) desc(接口名) option(Key)
+Description type(str) reg(.+) desc(描述)
+[rule]
+^\s*interface\s+"(?P<Name>[^"]+)"
+^\s*description\s+(?P<Description>.+)
+^\s*no shutdown\s*$
+^\s*shutdown\s*$
+
+  # ── 接口地址（子层）────────────────────────────────
+  # Nokia 的 address 有两种形态：带前缀长度 / 不带
+  NokiaAddresses type(list) start(^\s*address) desc(接口地址)
+  [value]
+  Address type(str) reg(\S+) desc(地址)
+  Mask    type(str) reg(\S+) desc(掩码)
+  [rule]
+  ^\s*address\s+(?P<Address>\S+)/(?P<Mask>\S+)\s*$
+  ^\s*address\s+(?P<Address>\S+)\s*$
+
+  # ── 绑定物理口（子层）──────────────────────────────
+  NokiaPorts type(list) start(^\s*port\s) desc(绑定物理口)
+  [value]
+  Port type(str) reg(\S+) desc(物理口)
+  [rule]
+  ^\s*port\s+(?P<Port>\S+)\s*$

@@ -1,0 +1,68 @@
+!Software Version V800R023C00SPC100
+#
+sysname SNANK-MC-CMNET-BRAS22-NHXL-X16A
+#
+router id 111.19.1.6
+#
+interface GigabitEthernet1/0/0
+ carrier down-hold-time 200
+ description TO-[SNANK-PC-CMNET-RT01-NE5KE]-GE4/0/0=1*10GE
+ undo shutdown
+ undo dcn
+#
+interface GigabitEthernet1/0/1
+ shutdown
+ statistic enable
+ statistic mode forward
+#
+interface Eth-Trunk1
+ mtu 4474
+ description TO-[SNANK-PC-CMNET-RT01-NE5000E]-ETH-Trunk23=1*100GEUPLINKCR01
+ ipv6 enable
+ ip address 111.19.27.122 255.255.255.252
+ ipv6 address 2409:8070:9A:1::702F/127
+ ipv6 address auto link-local
+ eth-trunk Eth-Trunk2
+ isis enable 100
+ isis circuit-type p2p
+#
+interface GigabitEthernet1/0/2
+ description TO-[SNANK-MA-CMNET-NHXL-TaoYuanXiaoQu-OLT]-GE1/0/0=1*GE
+ undo shutdown
+ eth-trunk Eth-Trunk1
+#
+ip route-static 103.85.74.96 255.255.255.224 NULL0 description huwang-fengdu
+ip route-static 111.18.27.196 255.255.255.252 NULL0 preference 220 description JiaKuanVIP1
+#
+ip vpn-instance ChinaMobile_CMNET_SN_IMS
+ ipv4-family
+  route-distinguisher 64650:10009150
+  vpn-target 64650:10009150 export-extcommunity
+  vpn-target 64650:10000290 export-extcommunity
+  vpn-target 64650:10009150 import-extcommunity
+#
+bgp 64650
+ router-id 111.19.1.6
+ private-4-byte-as disable
+ group RR-L2 internal
+ peer RR-L2 description SNANK-PC-CMNET-RT01/RT02-NE5KE
+ peer RR-L2 connect-interface LoopBack0
+ peer 218.200.1.10 as-number 64650
+ peer 218.200.1.10 group RR-L2
+ peer 218.200.1.10 description SNANK-PC-CMNET-RT01-NE5KE
+ peer 218.200.31.228 as-number 64650
+ peer 218.200.31.228 group RR-L2
+#
+acl number 2005
+ description TO-IP_GongZuoTai_SNMP
+ rule 5 permit source 120.192.198.3 0
+ rule 50 permit source 223.92.1.144 0.0.0.15
+ rule 60 deny source 211.137.117.188 0.0.0.3
+#
+nqa twamp-light
+ responder
+  test-session 1 local-ip 111.19.27.122 remote-ip 111.19.27.121 local-port 6402 remote-port 45700 link-bundle-interface Eth-Trunk1
+  test-session 2 local-ip 111.19.27.126 remote-ip 111.19.27.125 local-port 6402 remote-port 45700 link-bundle-interface Eth-Trunk2
+#
+return
+<SNANK-MC-CMNET-BRAS22-NHXL/X16A>
