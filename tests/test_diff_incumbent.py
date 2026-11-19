@@ -174,6 +174,49 @@ def main():
     check("无可评估路由不产出误导百分比",
           empty["x"]["loss_pct"] == 0 and "无显式出接口路由" in empty["x"]["note"])
 
+    # 并行与串行必须产出同一份结果：证据分桶与采样都是「先到先留」，
+    # 乱序合并会让同一批语料冒出不同证据样本。
+    probe = d.process_entry.__doc__ or ""
+    check("单文件处理是可独立合并的纯函数", "可合并的局部结果" in probe)
+    payload = {"entry": {"stem": "s", "month": "m"},
+               "part": d.zero_stats(), "samples": {c: [] for c in d.COLUMNS},
+               "both": [0, 0, 0], "only_inc": [0, 0], "only_np": [0, 0],
+               "evidence": {s: {c: {} for c in d.COLUMNS} for s in d.SIDES[1:]},
+               "surplus": {s: {c: {} for c in d.COLUMNS} for s in d.SIDES[1:]},
+               "masks": {}, "mismatch": None, "counts": [0, 0, 0],
+               "inc_fields": [], "np_fields": [], "categories": {}, "route": {}}
+    state = {"stats": d.zero_stats(), "samples": {c: [] for c in d.COLUMNS},
+             "evidence_acc": {s: d.collections.defaultdict(dict) for s in d.SIDES[1:]},
+             "surplus_acc": {s: d.collections.defaultdict(dict) for s in d.SIDES[1:]},
+             "align": {"both": 0, "only_incumbent": 0, "only_netparse": 0},
+             "align_before": {"both": 0, "only_incumbent": 0, "only_netparse": 0},
+             "parity": {"files_matched": 0, "files_mismatched": 0, "mismatches": []},
+             "masks": d.collections.Counter(), "inc_fields": set(), "np_fields": set(),
+             "categories": d.collections.Counter(),
+             "route": d.collections.defaultdict(d.collections.Counter), "per_file": []}
+    d.merge_entry(state, payload)
+    check("合并后逐文件数计入", len(state["per_file"]) == 1)
+    check("合并后接口计数归零不误增", state["parity"]["files_matched"] == 1)
+    # 临时产物必须保留原文件名：采集时间取自文件名末尾时间戳。
+    src = open(os.path.join(ROOT, "tools", "diff_incumbent.py"), encoding="utf-8").read()
+    check("临时产物沿用原文件名",
+          'entry["stem"] + ".json"' in src and "netparse-entry-" not in src)
+
+    # Markdown 表格每行必须列数一致：标准 Markdown 不支持 colspan，
+    # 在表格里插说明行会让整张表在渲染时错位。
+    md = d.markdown({"meta": {"files_processed": 1, "mode": "sample", "sample_seed": 1},
+                     "part1_ledger": {"column_fill_rate": columns, "diff_samples": {},
+                                      "interface_alignment": {"both": 0, "only_incumbent": 0,
+                                                              "only_netparse": 0}},
+                     "route_static_validation": {}, "part2_capability": {"interface_level_fields": {"coverage": {
+                         "netparse": 15, "incumbent": 10, "matched": 4, "only_netparse": 11, "only_incumbent": 6}}},
+                     "workload_estimate": {}, "conclusion": "", "repro": {},
+                     "readonly_check": {"message": "READ-ONLY OK"}})
+    table_rows = [line for line in md.split("\n") if line.startswith("|")]
+    check("Markdown 表格列数一致", all(row.count("|") == 11 for row in table_rows))
+    check("Markdown 不用 colspan", "colspan" not in md)
+    check("列备注移到表外脚注", "**列备注：**" in md)
+
     entries = [{"month": "m%d" % (i % 26), "stem": str(i)} for i in range(260)]
     selected = d.select_entries(entries, 20, sample_seed=7)
     check("抽样 20 覆盖 20 月", len({e["month"] for e in selected}) == 20)

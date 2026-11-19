@@ -5,8 +5,11 @@
 
 用法：
   python tools/diff_incumbent.py --sample 20
-  python tools/diff_incumbent.py --all --out-dir diff-report/full
+  python tools/diff_incumbent.py --all --out-dir diff-report/full --jobs 12
   python tools/diff_incumbent.py --dry-run
+
+`--jobs N` 只影响速度，不影响结果：单文件处理是纯函数（process_entry），
+主进程按提交顺序合并（merge_entry），所以 `--jobs 1` 与 `--jobs N` 的产物逐字节一致。
 """
 
 import argparse
@@ -17,6 +20,7 @@ import json
 import os
 import random
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -844,6 +848,7 @@ def markdown(report):
              "## 全局19列三栏（填充率 / 非空单元格值条数）", "",
              "| 列 | incumbent | 修前 | 修后 | 全局值条数 inc/before/after | 修前差 | 修后差 | 标记 | 修后缺口根因 | 修后多值根因 |",
              "|---|---:|---:|---:|---:|---:|---:|---|---|---|"]
+    notes = []
     for col in COLUMNS:
         c = columns[col]
         rates = ["%.2f%%" % (100 * c[s]["rate"]) for s in SIDES]
@@ -854,9 +859,13 @@ def markdown(report):
                      (col, rates[0], rates[1], rates[2], values, c["delta_pct_before"],
                       c["delta_pct_after"], "**RED**" if c["flag"] == "RED" else "OK", causes, over))
         if c["note"]:
-            lines.append("| %s | colspan=9 | %s |" % (col, c["note"]))
-    lines += ["", "逐文件19列三栏保存在JSON `per_file_column_fill_rate`；每文件结构为 file/month/columns。", "",
-              "## 根因证据门禁", "",
+            # 表格里插 colspan 单元格会破坏 Markdown 列对齐（标准 Markdown 不支持 colspan），
+            # 所以备注放到表下方的脚注区，用列名索引。
+            notes.append("- **%s**：%s" % (col, c["note"]))
+    lines += ["", "逐文件19列三栏保存在JSON `per_file_column_fill_rate`；每文件结构为 file/month/columns。", ""]
+    if notes:
+        lines += ["**列备注：**", ""] + notes + [""]
+    lines += ["## 根因证据门禁", "",
               "自动根因必须有真实文件/行号、模板声明（含候选集合与规则）和真实 trace 规则复核；"
               "不足为 `待人工判定 + INSUFFICIENT`。join缺失单列且先证明原始字段已捕获。"
               "netparse 多出值同样单独诊断方向，不只标红。", "",
@@ -885,6 +894,208 @@ def markdown(report):
     return "\n".join(lines) + "\n"
 
 
+def process_entry(entry, ctx):
+    """对单个文件跑三侧对比，只返回「可合并的局部结果」，不碰全局累积器。
+
+    抽成纯函数是为了能多进程并行：子进程之间不能共享 Counter/defaultdict，
+    必须把每文件的产物整体传回主进程，再按原始顺序合并 —— 顺序固定才能保证
+    --jobs N 与 --jobs 1 的产物逐字节一致（证据采样是「先到先留」的）。
+    """
+    incumbent = read_json(entry["json"])
+    inc_rows = build_excel.build_rows(entry["json"])
+    with open(entry["raw"], encoding="utf-8", errors="replace") as f:
+        lines = f.readlines()
+    results, np_rows, traces, masks = [], [], [], collections.Counter()
+    evidence_local = {side: collections.defaultdict(dict) for side in SIDES[1:]}
+    surplus_local = {side: collections.defaultdict(dict) for side in SIDES[1:]}
+    for template_index, colls in enumerate(ctx["templates"]):
+        trace = []
+        result = engine.run(colls, lines, trace=trace)
+        masks.update(engine.STATS.as_dict())  # 每次run都reset，必须逐次累加
+        results.append(result)
+        traces.append(trace)
+        shaped = to_incumbent_shape(result)
+        # ⚠️ 必须保留原文件名：生产 build_excel 的「采集时间」取自文件名末尾时间戳，
+        # 用随机临时名会让该列整列为空（曾导致 both_nonempty_diff 从 3134 掉到 0）。
+        # 并行安全靠「每进程一个独立临时目录」保证，不靠改文件名。
+        path = os.path.join(ctx["tmp_dir"], entry["stem"] + ".json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(shaped, f, ensure_ascii=False)
+        try:
+            np_rows.append(build_excel.build_rows(path))
+        finally:
+            os.unlink(path)
+        counts_now = collection_record_counts(result)
+        for col_index, col in enumerate(COLUMNS):
+            ev = evidence_for(entry, trace, ctx["declarations"][template_index][col_index],
+                              col, ctx["compiled"][template_index], counts_now)
+            if col == "IPv4静态路由明细" and template_index == 0:
+                route_ev = route_record_loss_evidence(
+                    entry, incumbent, result, trace,
+                    ctx["declarations"][0][col_index], ctx["compiled"][0], counts_now)
+                if route_ev:
+                    add_evidence(evidence_local[SIDES[1]][col], route_ev)
+            if evidence_complete(ev):
+                add_evidence(evidence_local[SIDES[template_index + 1]][col], ev)
+    samples = {col: [] for col in COLUMNS}
+    part, both, only_inc, only_np, _ = compare_three(inc_rows, np_rows[0], np_rows[1], samples)
+    # 正差异（netparse 多出）也要有真实行证据，不能只标红。
+    for side, template_index in zip(SIDES[1:], (0, 1)):
+        for col_index, col in enumerate(COLUMNS):
+            if part[side]["values"][col] <= part["incumbent"]["values"][col]:
+                continue
+            ev = surplus_evidence(entry, traces[template_index],
+                                  ctx["declarations"][template_index][col_index], col,
+                                  ctx["compiled"][template_index],
+                                  collection_record_counts(results[template_index]))
+            if ev:
+                add_evidence(surplus_local[side][col], ev)
+    counts = [len(inc_rows), len(np_rows[0]), len(np_rows[1])]
+    mismatch = None
+    if counts[0] != counts[2]:
+        mismatch = {"file": entry["stem"], "counts": counts,
+                    "only_incumbent": sorted(set(index_rows(inc_rows)) - set(index_rows(np_rows[1]))),
+                    "only_netparse": sorted(set(index_rows(np_rows[1])) - set(index_rows(inc_rows)))}
+    categories = collections.Counter()
+    for cat in CATEGORIES:
+        categories[cat] += count_category_records(results[1], cat)
+    return {
+        "entry": {"stem": entry["stem"], "month": entry["month"]},
+        "part": part, "samples": samples,
+        "both": both, "only_inc": only_inc, "only_np": only_np,
+        "evidence": {side: {col: dict(evidence_local[side][col]) for col in COLUMNS} for side in SIDES[1:]},
+        "surplus": {side: {col: dict(surplus_local[side][col]) for col in COLUMNS} for side in SIDES[1:]},
+        "masks": dict(masks), "mismatch": mismatch, "counts": counts,
+        "inc_fields": sorted({k for it in incumbent.get("interfaces", []) for k in it}),
+        "np_fields": sorted({k for it in results[1].get("Interfaces", []) for k in it}),
+        "categories": dict(categories),
+        "route": {label: dict(loss) for label, loss in
+                  route_loss(incumbent, dict(zip(SIDES[1:], results))).items()},
+    }
+
+
+def merge_entry(state, payload):
+    """把单文件结果按顺序并回全局累积器；合并逻辑与并行度无关。"""
+    entry = payload["entry"]
+    add_stats(state["stats"], payload["part"])
+    for col, items in payload["samples"].items():
+        bucket = state["samples"][col]
+        for item in items:
+            if len(bucket) < 20:
+                bucket.append(item)
+    state["per_file"].append(file_summary(entry, payload["part"]))
+    for side in SIDES[1:]:
+        for col in COLUMNS:
+            for signature, samples in payload["evidence"][side][col].items():
+                for sample in samples:
+                    add_evidence(state["evidence_acc"][side][col], sample)
+            for signature, samples in payload["surplus"][side][col].items():
+                for sample in samples:
+                    add_evidence(state["surplus_acc"][side][col], sample)
+    for target, index in zip((state["align_before"], state["align"]), (1, 2)):
+        target["both"] += payload["both"][index]
+        target["only_incumbent"] += payload["only_inc"][index - 1]
+        target["only_netparse"] += payload["only_np"][index - 1]
+    if payload["mismatch"]:
+        state["parity"]["files_mismatched"] += 1
+        state["parity"]["mismatches"].append(payload["mismatch"])
+    else:
+        state["parity"]["files_matched"] += 1
+    state["masks"].update(payload["masks"])
+    state["inc_fields"].update(payload["inc_fields"])
+    state["np_fields"].update(payload["np_fields"])
+    for cat, count in payload["categories"].items():
+        state["categories"][cat] += count
+    for label, loss in payload["route"].items():
+        state["route"][label].update(loss)
+
+
+def _worker_init(ctx):
+    """子进程初始化：装上下文 + 忽略 Ctrl-C（由主进程统一收尾）。
+
+    Windows 走 spawn，子进程不会继承父进程模块状态，必须显式传 ctx；
+    fork 下这样写也等价，所以两边用同一条路径。
+    """
+    _WORKER_CTX["ctx"] = ctx
+    try:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except (AttributeError, ValueError):
+        pass
+
+
+_WORKER_CTX = {}
+
+
+def _worker_task(entry):
+    try:
+        # 每进程一个临时目录：文件名必须保留原 stem（采集时间来自文件名），
+        # 又不能跨进程互相覆盖同名产物，所以按进程隔离目录而非改文件名。
+        if "tmp_dir" not in _WORKER_CTX:
+            _WORKER_CTX["tmp_dir"] = tempfile.mkdtemp(prefix="netparse-worker-")
+            _WORKER_CTX["ctx"]["tmp_dir"] = _WORKER_CTX["tmp_dir"]
+        return {"ok": True, "payload": process_entry(entry, _WORKER_CTX["ctx"])}
+    except Exception as exc:
+        return {"ok": False, "failure": {"file": entry["stem"], "raw": entry["raw"],
+                                         "error": "%s: %s" % (type(exc).__name__, exc)}}
+
+
+def _run_entries(args, selected, state, failures, ctx):
+    """按顺序处理所有文件；jobs=1 走内联，jobs>1 走进程池但同样按序回放。
+
+    顺序是报告可复现性的一部分：证据分桶是「先到先留」，采样也是先到先留，
+    乱序合并会让同一批语料产出不同的证据样本。
+    """
+    jobs = max(1, min(args.jobs or 1, len(selected) or 1))
+
+    def record(i, outcome):
+        if outcome["ok"]:
+            merge_entry(state, outcome["payload"])
+        else:
+            failures.append(outcome["failure"])
+        if i % 10 == 0 or i == len(selected):
+            print("%d/%d；失败 %d；耗时 %.1fs" % (i, len(selected), len(failures),
+                                                 time.time() - args.started), flush=True)
+
+    if jobs == 1:
+        for i, entry in enumerate(selected, 1):
+            try:
+                outcome = {"ok": True, "payload": process_entry(entry, ctx)}
+            except Exception as exc:
+                outcome = {"ok": False, "failure": {"file": entry["stem"], "raw": entry["raw"],
+                                                    "error": "%s: %s" % (type(exc).__name__, exc)}}
+            record(i, outcome)
+            if len(failures) > args.max_failures:
+                break
+        return
+
+    import multiprocessing
+    pool = multiprocessing.Pool(jobs, initializer=_worker_init, initargs=(ctx,))
+    try:
+        for i, outcome in enumerate(pool.imap(_worker_task, selected, chunksize=1), 1):
+            record(i, outcome)
+            if len(failures) > args.max_failures:
+                pool.terminate()
+                break
+    except KeyboardInterrupt:
+        pool.terminate()
+        raise
+    finally:
+        pool.close()
+        pool.join()
+        # 子进程的临时目录不随父进程 TemporaryDirectory 回收，必须自己扫掉。
+        for name in os.listdir(tempfile.gettempdir()):
+            if not name.startswith("netparse-worker-"):
+                continue
+            path = os.path.join(tempfile.gettempdir(), name)
+            if not os.path.isdir(path):
+                continue
+            for leftover in os.listdir(path):
+                if leftover.endswith(".json"):
+                    os.unlink(os.path.join(path, leftover))
+            if not os.listdir(path):
+                os.rmdir(path)
+
+
 def run_diff(args, idx, entries):
     candidates = select_entries(entries, None, args.month)
     selected = select_entries(entries, args.sample, args.month, args.sample_seed)
@@ -901,96 +1112,28 @@ def run_diff(args, idx, entries):
     compiled_templates = [compile_rules(colls) for colls in templates]
     declarations = [[template_declaration(path, colls, col) for col in COLUMNS]
                     for path, colls in zip(template_paths, templates)]
-    stats, samples = zero_stats(), {col: [] for col in COLUMNS}
-    # 分桶：每列每侧按「命令族+命中规则」归组，每组成因各带自己的证据。
-    evidence_acc = {side: collections.defaultdict(dict) for side in SIDES[1:]}
-    surplus_acc = {side: collections.defaultdict(dict) for side in SIDES[1:]}
-    align = {"both": 0, "only_incumbent": 0, "only_netparse": 0}
-    align_before = dict(align)
-    parity = {"files_matched": 0, "files_mismatched": 0, "mismatches": []}
-    failures, masks = [], collections.Counter()
-    inc_fields, np_fields, categories = set(), set(), collections.Counter()
-    route = collections.defaultdict(collections.Counter)
-    per_file = []
+    state = {"stats": zero_stats(), "samples": {col: [] for col in COLUMNS},
+             # 分桶：每列每侧按「命令族+命中规则」归组，每组成因各带自己的证据。
+             "evidence_acc": {side: collections.defaultdict(dict) for side in SIDES[1:]},
+             "surplus_acc": {side: collections.defaultdict(dict) for side in SIDES[1:]},
+             "align": {"both": 0, "only_incumbent": 0, "only_netparse": 0},
+             "align_before": {"both": 0, "only_incumbent": 0, "only_netparse": 0},
+             "parity": {"files_matched": 0, "files_mismatched": 0, "mismatches": []},
+             "masks": collections.Counter(), "inc_fields": set(), "np_fields": set(),
+             "categories": collections.Counter(),
+             "route": collections.defaultdict(collections.Counter), "per_file": []}
+    failures = []
     os.makedirs(args.out_dir, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="netparse-diff-", dir=args.out_dir) as tmp:
-        try:
-            for i, entry in enumerate(selected, 1):
-                try:
-                    incumbent = read_json(entry["json"])
-                    inc_rows = build_excel.build_rows(entry["json"])
-                    with open(entry["raw"], encoding="utf-8", errors="replace") as f:
-                        lines = f.readlines()
-                    results, np_rows, traces = [], [], []
-                    for template_index, colls in enumerate(templates):
-                        trace = []
-                        result = engine.run(colls, lines, trace=trace)
-                        masks.update(engine.STATS.as_dict())  # 每次run都reset，必须逐次累加
-                        results.append(result)
-                        traces.append(trace)
-                        shaped = to_incumbent_shape(result)
-                        path = os.path.join(tmp, entry["stem"] + ".json")
-                        with open(path, "w", encoding="utf-8") as f:
-                            json.dump(shaped, f, ensure_ascii=False)
-                        np_rows.append(build_excel.build_rows(path))
-                        os.unlink(path)
-                        counts_now = collection_record_counts(result)
-                        for col_index, col in enumerate(COLUMNS):
-                            ev = evidence_for(entry, trace, declarations[template_index][col_index],
-                                              col, compiled_templates[template_index], counts_now)
-                            if col == "IPv4静态路由明细" and template_index == 0:
-                                route_ev = route_record_loss_evidence(
-                                    entry, incumbent, result, trace,
-                                    declarations[0][col_index], compiled_templates[0], counts_now)
-                                if route_ev:
-                                    add_evidence(evidence_acc[SIDES[1]][col], route_ev)
-                            if evidence_complete(ev):
-                                add_evidence(evidence_acc[SIDES[template_index + 1]][col], ev)
-                    part, both, only_inc, only_np, _ = compare_three(inc_rows, np_rows[0], np_rows[1], samples)
-                    add_stats(stats, part)
-                    per_file.append(file_summary(entry, part))
-                    # 正差异（netparse 多出）也要有真实行证据，不能只标红。
-                    for side, template_index in zip(SIDES[1:], (0, 1)):
-                        for col_index, col in enumerate(COLUMNS):
-                            if part[side]["values"][col] <= part["incumbent"]["values"][col]:
-                                continue
-                            ev = surplus_evidence(entry, traces[template_index],
-                                                  declarations[template_index][col_index], col,
-                                                  compiled_templates[template_index],
-                                                  collection_record_counts(results[template_index]))
-                            if ev:
-                                add_evidence(surplus_acc[side][col], ev)
-                    for target, index in zip((align_before, align), (1, 2)):
-                        target["both"] += both[index]
-                        target["only_incumbent"] += only_inc[index - 1]
-                        target["only_netparse"] += only_np[index - 1]
-                    counts = [len(inc_rows), len(np_rows[0]), len(np_rows[1])]
-                    if counts[0] == counts[2]:
-                        parity["files_matched"] += 1
-                    else:
-                        parity["files_mismatched"] += 1
-                        parity["mismatches"].append({"file": entry["stem"], "counts": counts,
-                            "only_incumbent": sorted(set(index_rows(inc_rows)) - set(index_rows(np_rows[1]))),
-                            "only_netparse": sorted(set(index_rows(np_rows[1])) - set(index_rows(inc_rows)))})
-                    inc_fields.update(k for it in incumbent.get("interfaces", []) for k in it)
-                    np_fields.update(k for it in results[1].get("Interfaces", []) for k in it)
-                    for cat in CATEGORIES:
-                        categories[cat] += count_category_records(results[1], cat)
-                    for label, loss in route_loss(incumbent, dict(zip(SIDES[1:], results))).items():
-                        route[label].update(loss)
-                except Exception as exc:
-                    failures.append({"file": entry["stem"], "raw": entry["raw"],
-                                     "error": "%s: %s" % (type(exc).__name__, exc)})
-                    if len(failures) > args.max_failures:
-                        break
-                if i % 10 == 0 or i == len(selected):
-                    print("%d/%d；失败 %d；耗时 %.1fs" % (i, len(selected), len(failures), time.time() - args.started), flush=True)
-        finally:
-            leftovers = [name for name in os.listdir(tmp) if name.endswith(".json")]
-            for name in leftovers:
-                os.unlink(os.path.join(tmp, name))
-            if os.listdir(tmp):
-                raise RuntimeError("临时目录清理失败：" + tmp)
+    # 临时目录挂在 ctx 上：串行用一份，并行时各子进程各自建一份（见 _worker_task）。
+    with tempfile.TemporaryDirectory(prefix="netparse-diff-") as tmp_dir:
+        ctx = {"templates": templates, "compiled": compiled_templates,
+               "declarations": declarations, "tmp_dir": tmp_dir}
+        _run_entries(args, selected, state, failures, ctx)
+    stats, samples = state["stats"], state["samples"]
+    evidence_acc, surplus_acc = state["evidence_acc"], state["surplus_acc"]
+    align, align_before, parity = state["align"], state["align_before"], state["parity"]
+    masks, inc_fields, np_fields = state["masks"], state["inc_fields"], state["np_fields"]
+    categories, route, per_file = state["categories"], state["route"], state["per_file"]
     # 证据已按成因分桶；这里只做浅拷贝，交给 summary 分组诊断。
     evidence = {side: {col: dict(evidence_acc[side][col]) for col in COLUMNS} for side in SIDES[1:]}
     surplus = {side: {col: dict(surplus_acc[side][col]) for col in COLUMNS} for side in SIDES[1:]}
@@ -1092,6 +1235,8 @@ def main(argv=None):
     parser.add_argument("--markdown", dest="markdown_path")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--max-failures", type=int, default=0)
+    parser.add_argument("--jobs", type=int, default=1,
+                        help="并行进程数；默认 1（串行）。结果与并行度无关，按提交顺序合并。")
     args = parser.parse_args(argv)
     if not args.all and args.sample is None and not args.dry_run:
         parser.error("请选择 --all、--sample N 或 --dry-run")
