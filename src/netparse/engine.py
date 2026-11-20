@@ -136,7 +136,20 @@ class Field:
 
 
 class Coll:
-    """一个集合（一层状态）。"""
+    """一个集合（一层状态）。
+
+    层级有三种表达方式，可以混用：
+
+    1. start / end 正则配对（原有方式，适合 Nokia 的 exit、Cisco 的 !）
+    2. indent(n) —— 精确缩进锚定。声明后，本集合的**所有规则**只在
+       恰好 n 个前导空格的行上生效。华为配置缩进严格（318 台全部 0/1/2 层），
+       用它可以把「接口本级」和「bas 视图正文」放进同一个集合而互不串味。
+    3. end_indent(n) —— 裸 `#` / `!` 分隔符的层级语义。声明后，只有
+       恰好 n 个前导空格的 `#` 才关闭本层；未声明则维持旧行为
+       （任意 `#` 都可关闭本层）。
+
+    indent 与 end_indent 都是 **opt-in**：不写就完全保持旧行为，老模板零影响。
+    """
 
     def __init__(self, name, attrs, flags, indent, parent):
         self.name = name
@@ -155,6 +168,30 @@ class Coll:
         self.key_fields = []            # 由 option(Key) 派生
         self.start_re = re.compile(self.start) if self.start else None
         self.end_re = re.compile(self.end) if self.end else None
+
+        # indent(n)：规则级缩进锚定。n 是**命令行的前导空格数**。
+        self.anchor_indent = None
+        self.indent_re = None
+        raw = attrs.get("indent")
+        if raw is not None:
+            try:
+                n = int(raw)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "集合 %s 的 indent(...) 必须是整数，收到 %r" % (name, raw))
+            self.anchor_indent = n
+            self.indent_re = re.compile(r"^ {%d}\S" % n)
+
+        # end_indent(n)：裸分隔符 `#` / `!` 的层级语义（opt-in）。
+        self.end_indent = None
+        raw = attrs.get("end_indent")
+        if raw is not None:
+            try:
+                self.end_indent = int(raw)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "集合 %s 的 end_indent(...) 必须是整数，收到 %r" % (name, raw))
+
 
     def __repr__(self):
         return f"<Coll {self.name} d={self.indent} children={[c.name for c in self.children]}>"
@@ -233,9 +270,15 @@ def parse_template(path):
         st = s.strip()
         if not st:
             flush_pending()
-            mode = None
+            # 空行只结束「当前规则的多行续写」，不结束段落。
+            # ⚠️ 不能无条件把 mode 设回 None：[rule] 段里用空行分组（可读性需要）
+            # 会让后续 `^ {1}xxx` 规则走进「段外」分支被当成集合声明吞掉。
+            # 而 [value] 段后的空行必须回到「段外」，否则下一条
+            # `Interfaces type(list) ...` 会被当成字段声明 —— 所以按上一段类型区分。
+            if mode != "rule":
+                mode = None
+                field_stack = []
             base_indent = None
-            field_stack = []
             continue
         if st.startswith("#"):
             continue
@@ -278,8 +321,17 @@ def parse_template(path):
         # [rule] 段 → 子集合声明 / 规则 / 规则续行
         if is_coll_decl(toks):
             flush_pending()
-            new_collection(toks, indent)
-            mode = None
+            coll = new_collection(toks, indent)
+            # ⚠️ 这里**不能**把 mode 设回 None。
+            # mode=None 的语义是「段外，只接受集合声明」，一旦设回 None，
+            # 子集合之后紧跟的父集合规则（例如 Interfaces 里先声明 IpAddress
+            # 子集合、再写 `^ {1}mtu ...` 规则）就会被当成集合声明吞掉。
+            # 子集合自己必然带 [value]/[rule] 段，那些段会把 section_coll 切过去，
+            # 所以保持 mode="rule" 是安全的。
+            #
+            # section_coll 跟着切到子集合：子集合若没有显式 [rule] 段
+            # （如 BgpPeers 只在声明行写了 indent），后续规则应归到子集合。
+            section_coll = coll
             base_indent = None
             field_stack = []
             continue
@@ -329,6 +381,23 @@ def compile_rule(rule, coll):
         pattern = re.sub(r"\$\{([A-Za-z_][\w.]*)\}", sub, rule.pattern)
     except KeyError as e:
         raise KeyError(f"{coll.name}: 字段 {e.args[0]} 未声明") from None
+
+    # 手写的命名组也允许带点：`(?P<Sub.C>...)` 是字段路径的自然写法，
+    # 但 Python re 的组名只能是标识符，点会直接 PatternError。
+    # 这里统一把组名里的点换成 `__`，并在 group_paths 里登记回原路径，
+    # 这样 `_apply` 写回记录时仍然落在 Sub.C 上。
+    def norm_group(m):
+        defined, referenced = m.group(1), m.group(2)
+        name = defined if defined is not None else referenced
+        if "." not in name:
+            return m.group(0)
+        flat = name.replace(".", "__")
+        group_paths.setdefault(flat, name)
+        path_groups.setdefault(name, flat)
+        return f"(?P<{flat}>" if defined is not None else f"(?P={flat})"
+
+    pattern = re.sub(r"\(\?P(?:<([^>=]+)>|=([\w.]+))", norm_group, pattern)
+
     return CompiledRule(re.compile(pattern), group_paths, path_groups, rule.target)
 
 
@@ -433,13 +502,65 @@ def apply_writes(rec, writes, coll):
                 rec[p0] = bucket
             bucket.append(elem)
         else:
+            # 首段是 dict，但**内部可能有 list 字段**（如
+            # Ipv4Family.VpnTargets）。裸 set_path 会把 list 字段反复覆盖成
+            # 一个 dict —— 三条 vpn-target 只剩最后一条。
+            #
+            # 语义与顶层 list 保持一致：同一次写入（= 同一行命令）里挂在
+            # 同一个 list 前缀下的字段，归到**同一个新元素**；不同行的写入
+            # 各追加一个元素。
+            list_groups = OrderedDict()
             for path, value in items:
                 segs = path.split(".")
                 tf = coll.all_fields.get(path)
                 if tf is not None and tf.type_conflict:
                     continue        # type 声明冲突 → 该字段按缺字段处理，不产出
-                set_path(rec, segs,
-                         convert(mask_value(value, tf, CONFIG.value, CONFIG.heuristic), tf))
+                converted = convert(
+                    mask_value(value, tf, CONFIG.value, CONFIG.heuristic), tf)
+                lpre = _list_prefix(rec, segs, coll)
+                if lpre is None:
+                    set_path(rec, segs, converted)
+                else:
+                    key = tuple(lpre)
+                    list_groups.setdefault(
+                        key, []).append((segs[len(lpre):], converted))
+            for lkey, sub in list_groups.items():
+                elem = {}
+                for segs, converted in sub:
+                    set_path(elem, segs, converted)
+                _append_to_list_path(rec, list(lkey), elem)
+
+
+def _list_prefix(rec, segs, coll):
+    """segs 路径里**第一个指向 type(list) 字段**的前缀（含该字段本身）。
+
+    返回 None 表示这条路径一路都是 dict/标量，不涉及 list。
+    """
+    for i in range(1, len(segs)):
+        fpath = ".".join(segs[:i + 1])
+        fld = coll.all_fields.get(fpath)
+        if fld is not None and fld.type == "list":
+            return segs[:i + 1]
+    return None
+
+
+def _append_to_list_path(rec, lpre, elem):
+    """沿 dict 路径走到 lpre 的父级，把 elem 追加到该 list 字段。"""
+    cur = rec
+    for p in lpre[:-1]:
+        nxt = cur.get(p)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            cur[p] = nxt
+        cur = nxt
+    bucket = cur.get(lpre[-1])
+    if isinstance(bucket, dict):        # 容错：之前被写成 dict
+        bucket = [bucket]
+        cur[lpre[-1]] = bucket
+    elif bucket is None:
+        bucket = []
+        cur[lpre[-1]] = bucket
+    bucket.append(elem)
 
 
 # ── 目标解析 ──────────────────────────────────────────
@@ -513,15 +634,24 @@ def merge_by_key(elems, coll):
 
 
 def apply_defaults(rec, coll):
-    """填充声明了 default 但没抓到值的字段。"""
+    """填充声明了 default 但没抓到值的字段。
+
+    ⚠️ 嵌套字段（如 Bas.ArpTrigger）只在**父对象已经存在**时才填。
+    否则一个根本没有 bas 块的接口也会凭空长出 `Bas: {ArpTrigger: true}` ——
+    「没出现」和「出现但取默认」是两件事，不能混。
+    """
     for fld in coll.all_fields.values():
         if fld.default is None or fld.type == "list":
             continue
-        if get_path(rec, fld.path) is None:
-            val = parse_literal(fld.default)
-            if fld.is_secret():
-                val = mask_value(val, fld, CONFIG.value, CONFIG.heuristic)
-            set_path(rec, fld.path.split("."), convert(val, fld))
+        if get_path(rec, fld.path) is not None:
+            continue
+        segs = fld.path.split(".")
+        if len(segs) > 1 and get_path(rec, ".".join(segs[:-1])) is None:
+            continue                     # 父对象不存在 → 整个子结构都不产出
+        val = parse_literal(fld.default)
+        if fld.is_secret():
+            val = mask_value(val, fld, CONFIG.value, CONFIG.heuristic)
+        set_path(rec, segs, convert(val, fld))
 
 
 def run(colls, lines, trace=None):
@@ -570,7 +700,11 @@ def run(colls, lines, trace=None):
             elems = merge_by_key(elems, cdef)
             if not elems:
                 continue
-            fr.rec[cname] = elems[0] if (coll.type == "dict" and len(elems) == 1) else elems
+            # 折叠条件看**子集合自己**的 type，不是父集合的。
+            # 写错成 coll.type 时：Interfaces 是 list → 永远不折叠，
+            # 声明为 type(dict) 的 Bas 也会被输出成 [{...}]（实测 10,462 条全是 list1）。
+            as_dict = cdef is not None and cdef.type == "dict" and len(elems) == 1
+            fr.rec[cname] = elems[0] if as_dict else elems
         apply_defaults(fr.rec, coll)
         if not check_required(fr.rec, coll):
             return
@@ -590,12 +724,22 @@ def run(colls, lines, trace=None):
         # 否则模板里声明的 end(^#$) 永远不生效 —— 分层级会一路挂着不收起，
         # 后续无 start 的块（如 aaa）里的 description 会被归到上一个接口上。
         if len(st) <= 2 and st[:1] in ("#", "!"):
-            # 一个分隔符关闭整条嵌套块：从栈顶向下找最深一个「end 能匹配」的层，
-            # 把它连同其上所有层一起收起；再重复，处理 Acls→AclRules 这种多层同时结束。
+            # 分隔符的层级语义分两档：
+            #   · 集合声明了 end_indent(k) → 只有「恰好 k 个前导空格」的 # 才关它（opt-in，新语义）
+            #   · 未声明 → 任意 # 都能关（旧行为，保证老模板与既有 fixture 不回归）
+            # 为什么要分层：华为配置的 # 自带缩进，1 个空格 = 只关 1 层子视图。
+            # 旧行为「一个 # 关整条嵌套块」会让 `bas` 块内的 # 连接口一起关掉。
+            sep_indent = len(line) - len(line.lstrip())
             while len(stack) > 1:
                 stop = None
                 for depth in range(len(stack) - 1, 0, -1):
-                    if stack[depth].coll.end_re and stack[depth].coll.end_re.search(line):
+                    fr = stack[depth]
+                    if not fr.coll.end_re:
+                        continue
+                    want = getattr(fr.coll, "end_indent", None)
+                    if want is not None and sep_indent != want:
+                        continue        # 缩进对不上，这个 # 关不掉这一层
+                    if fr.coll.end_re.search(line):
                         stop = depth
                         break
                 if stop is None:
@@ -636,6 +780,9 @@ def run(colls, lines, trace=None):
         hit_name = None
         if hit is not None:
             kind, coll, depth = hit
+            # start 命中即算「本行已被消费」：`bas` / `interface xxx` 这类视图入口行
+            # 由 start 语义吞掉，集合自己的 [rule] 里通常**没有**对应规则。
+            # 若把 hit_name 绑在 _apply 的返回值上，这些行会被 trace 记成未命中。
             if kind == "self":
                 fr = stack[depth]
                 while len(stack) > depth + 1:
@@ -643,8 +790,8 @@ def run(colls, lines, trace=None):
                 commit(fr)
                 fr.rec = {}
                 fr.children = OrderedDict()
-                if _apply(fr, line, compiled, last):
-                    hit_name = fr.coll.name
+                _apply(fr, line, compiled, last, from_start=True)
+                hit_name = fr.coll.name
             elif kind == "child":
                 idx = next((i for i, f in enumerate(stack) if f.coll is coll), None)
                 if idx is None:
@@ -658,14 +805,14 @@ def run(colls, lines, trace=None):
                     stack[idx].children = OrderedDict()
                     fr = stack[idx]
                 frame_of[coll.name] = fr
-                if _apply(fr, line, compiled, last):
-                    hit_name = fr.coll.name
+                _apply(fr, line, compiled, last, from_start=True)
+                hit_name = fr.coll.name
             else:   # new
                 fr = Frame(coll)
                 stack.append(fr)
                 frame_of[coll.name] = fr
-                if _apply(fr, line, compiled, last):
-                    hit_name = fr.coll.name
+                _apply(fr, line, compiled, last, from_start=True)
+                hit_name = fr.coll.name
             if trace is not None:
                 trace.append((no, line, hit_name, [f.coll.name for f in stack]))
             continue
@@ -705,11 +852,24 @@ def run(colls, lines, trace=None):
     return results
 
 
-def _apply(fr, line, compiled, last):
-    """用 fr 的规则匹配 line。命中返回 True"""
+def _apply(fr, line, compiled, last, from_start=False):
+    """用 fr 的规则匹配 line。命中返回 True。
+
+    from_start=True 表示这一行是刚命中 start 的视图入口行（如 `bas`）。
+    此时**不做缩进校验**：indent(n) 约束的是「本集合的规则只在缩进 n 生效」，
+    而视图入口行本身属于父层级（`bas` 在缩进 1，而 BasView 正文在缩进 2）。
+    把两者混在一起会让 bas 的 start 命中后立刻被缩进校验打回。
+    """
     coll = fr.coll
     if coll.name not in compiled:
         return False
+    # indent(n)：本集合只在自己那一层缩进上生效。
+    # 华为配置里 `user-vlan`（缩进 1）和 `access-type`（缩进 2）都可能出现在
+    # 同一个接口块下，靠这条卡住才不会被上一层的规则误收。
+    if not from_start:
+        anchor = getattr(coll, "indent_re", None)
+        if anchor is not None and not anchor.match(line):
+            return False
     for cr in compiled[coll.name]:
         m = cr.rx.match(line)
         if not m:
@@ -775,9 +935,22 @@ def _apply(fr, line, compiled, last):
             path_items = [(n, v) for n, v in items if "." in n]
             out = []
             if top_items:
-                # 顶层字段：先铺捕获组，再写常量
+                # 顶层字段：先铺捕获组，再写常量。
+                # ⚠️ v 为 None 表示 `-> A,B` 这种「只点名、不给常量」的写法，
+                #    值应当来自同名捕获组（已在 writes 里）。若直接 append
+                #    (n, None) 会把捕获到的真值覆盖成 None —— 实测让
+                #    `access-type … authentication ont_rms_01` 的 AccessType /
+                #    AuthDomain 双双击成 null。这里只补 writes 里没有的常量。
                 out += writes
-                out += top_items
+                written = {p for p, _ in writes}
+                for n, v in top_items:
+                    if v is None:
+                        if n in written:
+                            continue            # 捕获组已经写过，别覆盖
+                        if n in masked:
+                            out.append((n, masked[n]))
+                        continue
+                    out.append((n, v))
             for n, v in path_items:
                 # 嵌套路径：只写这一个路径，不铺其它捕获组
                 if v is None:

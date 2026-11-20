@@ -94,7 +94,7 @@ Name type(str) reg(\S+) desc(接口名) option(Key)
 ### 3.1 集合声明
 
 ```
-<集合名> type(<类型>) [start(<正则>)] [end(<正则>)] [desc(<说明>)]
+<集合名> type(<类型>) [start(<正则>)] [end(<正则>)] [indent(<数字>)] [end_indent(<数字>)] [desc(<说明>)]
 ```
 
 | 选项 | 形式 | 含义 | 省略时 |
@@ -102,11 +102,47 @@ Name type(str) reg(\S+) desc(接口名) option(Key)
 | `type` | `type(list\|dict\|str\|int\|float\|bool)` | 集合类型 | **list** |
 | `start` | `start(<正则>)` | **进入**该层的触发器 | 该层为**栈底常驻**，始终生效 |
 | `end` | `end(<正则>)` | **离开**该层的触发器 | **不启用 end 匹配** |
+| `indent` | `indent(<数字>)` | 本集合的**规则**只匹配「恰好 n 个前导空格」的行 | 不限制缩进 |
+| `end_indent` | `end_indent(<数字>)` | 只有「恰好 n 个前导空格」的 `#` 才关闭本层 | 任意 `#` 都能关 |
 | `desc` | `desc(<说明>)` | 中文说明 | 无 |
 
+> ### `indent(n)` —— 用缩进把同名命令分到不同集合（v3 新增，opt-in）
+>
+> 华为配置的层级**完全**由缩进表达（318 台 / 349 万行实测：只有 0/1/2 三层，
+> 无 Tab、无例外）。同一个命令名会在不同层级出现，光靠正则区分不了：
+>
+> ```
+> interface Eth-Trunk10
+>  nas logic-port eth-Trunk 2/0/9      ← 缩进 1（接口本级，1,168 次）
+>  bas
+> #
+>   nas logic-port GigabitEthernet 1/0/1  ← 缩进 2（bas 视图正文，5,975 次）
+> ```
+>
+> 做法是拆成两个集合，各带自己的 `indent`：
+>
+> ```
+> Interfaces type(list) start(^interface\s+) indent(1)
+> Bas        type(dict) start(^ {1}bas\s*$) indent(2)
+> ```
+>
+> **`indent` 只约束本集合的规则，不约束 `start` 行。** 视图入口行属于父层级
+> （`bas` 在缩进 1，而 Bas 的正文在缩进 2），引擎对「刚命中 start 的那一行」
+> 会跳过缩进校验（`_apply(..., from_start=True)`）。
+>
+> ### `end_indent(n)` —— 让 `#` 按缩进只关一层（v3 新增，opt-in）
+>
+> 裸 `#` 自带缩进，其语义是「关闭所有首行缩进 ≥ k 的视图层」。
+> 实测 `bas` 之后紧跟缩进 1 的 `#`（95,887/96,006 次），bas 正文全部缩进 2。
+>
+> 不写 `end_indent` = 旧行为（任意 `#` 都关），保证老模板零回归；
+> 写了才启用新语义。**这是刻意做成 opt-in 的**——改 `#` 的出栈规则
+> 会影响所有既有模板，必须先证明零回归再切默认。
+
 > ⚠️ **`end` 的实际状态（2026-11 更新）**：`templates/huawei-vrp.cmdb` 的
-> `Interfaces` / `VpnInstances` / `Acls` / `AclRules` 已声明 `end(^#$)`
-> （见 3.1.1「块分隔符」）。中兴的 `$`、诺基亚的 `exit` 仍需各自实测。
+> `Interfaces` / `VpnInstances` / `Acls` / `Bgp` / `Nqas` 已声明
+> `end(^#$) end_indent(0)`（见 3.1.1「块分隔符」）。
+> 中兴的 `$`、诺基亚的 `exit` 仍需各自实测。
 
 > **`end` 匹配已从「只查栈顶」改为「从栈顶向下找第一个匹配层」**（方案 X）。
 > 栈顶是子集合（end 为 None）时，父集合的 end 也能正确关闭。只收最内层，
@@ -718,6 +754,69 @@ TrackWeight type(int) reg(\d+) desc(权重)
 
 ---
 
+### 场景 15 · 同一缩进下的两个"平行子块"要靠 `start` 分流
+
+现网 `ip vpn-instance` 块是这样的：
+
+```
+ip vpn-instance ZiJian-VPN-ZhuanXian-XinAn
+ ipv4-family                      ← 缩进 1
+  route-distinguisher 64650:100000008
+  apply-label per-route
+  vpn-target 64650:100000008 export-extcommunity
+ ipv6-family                      ← 也是缩进 1
+  route-distinguisher 64650:100000008
+  apply-label per-instance
+  vpn-target 64650:100000008 export-extcommunity
+#
+```
+
+`ipv4-family` 280 次、`ipv6-family` 20 次，**都在缩进 1**，它们下面的
+RD / vpn-target **都在缩进 2**。光靠「缩进 + 规则前缀」区分不了族。
+
+❌ **错法**（会静默串味）：
+
+```text
+VpnInstances type(list)
+[value]
+Ipv4Family type(dict)
+Ipv6Family type(dict)
+[rule]
+^ {1}ipv4-family\s*$          -> Ipv4Family{}
+^ {1}ipv6-family\s*$          -> Ipv6Family{}
+^ {2}route-distinguisher\s+${Ipv4Family.RouteDistinguisher}\s*$
+^ {2}route-distinguisher\s+${Ipv6Family.RouteDistinguisher}\s*$   ← 永远抢不过上一条
+```
+
+实测后果：**20 个 ipv6-family 的 RD 和 vpn-target 全被写进 Ipv4Family**，
+IPv6 族一个字段都没有。
+
+✅ **对法**：拆成两个子集合，各自 `start` 锚定族首行，靠**栈的先后顺序**天然分离：
+
+```text
+VpnIpv4Family type(dict) start(^ {1}ipv4-family\s*$) indent(2) desc(IPv4 地址族)
+[value]
+RouteDistinguisher type(str) reg(\S+)
+VpnTargets type(list)
+  Rd        type(str) reg(\S+)
+  Direction type(str) reg(\S+)
+[rule]
+^ {2}route-distinguisher\s+${RouteDistinguisher}(?:\s+.*)?\s*$
+^ {2}vpn-target\s+(?P<Rd>\S+)\s+(?P<Direction>\S+)(?:\s+.*)?\s*$
+      -> VpnTargets{Rd,Direction}
+
+VpnIpv6Family type(dict) start(^ {1}ipv6-family\s*$) indent(2) desc(IPv6 地址族)
+  …… 同上，字段名一样，但进的是另一个栈帧 ……
+```
+
+进入 `ipv6-family` 后栈顶就是 `VpnIpv6Family`，`{2}` 规则只在它里面匹配 ——
+不需要在规则里区分族，**顺序天然分好了**。
+
+> 判据：**当两条同类规则只有"字段路径"不同、正则却能同时匹配时，几乎一定是错的。**
+> 正则匹配是「谁先谁赢」，不是「谁更具体谁赢」。
+
+---
+
 ## 5. Lint —— 模板写完必跑
 
 ```bash
@@ -860,3 +959,92 @@ python tools/legacy/probe_coverage3.py templates/huawei-vrp.cmdb <配置文件>
 
 回归基线：`tests/fixtures/sample-vrp.txt` + `sample-vrp.expected.json`
 （**嵌套形状**：子集合的元素嵌在父元素里）。
+
+---
+
+## 8. 2026-11 模板审查 —— 实测结论与引擎修复
+
+针对 318 台真实配置（3.49 万块 / 166 万接口块内命令行）做了一轮设计层审查，
+结论和数据都在这一节，改模板前先读。
+
+### 8.1 华为配置的层级模型（决定性证据）
+
+| 事实 | 数据 |
+|---|---|
+| 层级完全由缩进表达 | 318 台 / 349 万行 → 纯缩进模型切出 **441,180 块，0 异常** |
+| 缩进宽度只有 0/1/2 | 无 Tab、无例外，318 台 100% 一致 |
+| `#` 自带缩进 | `bas` 后紧跟缩进 1 的 `#` 占 95,887/96,006 次；bas 正文全部缩进 2 |
+| 顶层块种类 | **122 种**（旧模板只建模 12 个集合） |
+
+### 8.2 修复前 → 修复后
+
+| 指标 | 改前 | 改后 |
+|---|---|---|
+| 接口块内覆盖率 | 30.8% | **100.0%** |
+| 缺口「族已建模但规则不匹配」 | 22.1% | **0.0%** |
+| ACL 规则解析 | 2,675 / 14,723 | **14,723 / 14,723** |
+| `vlan-type` 命中 | 0 | 5,928 |
+| `user-vlan` 命中 | 4,324 | 28,771 |
+| `vrrp vrid` 命中 | 0 | 1,838 |
+| `Nqas.Name` 填充率 | 0% | 98.4% |
+| 块数守恒（6 类 × 20 台逐台核对） | — | **全部一致** |
+
+### 8.3 顺带查出的 6 个引擎 bug（都真实影响输出）
+
+| # | Bug | 后果 | 修法 |
+|---|---|---|---|
+| 1 | `end_re.search(line)` 作用在原始行，`^#$` 只锚第 0 列 | 缩进的 ` #` 匹配不上 → `bas` 层永不关闭，**2 万行丢失** | 新增 opt-in `end_indent(n)` |
+| 2 | `_apply` 对 start 行也做缩进校验 | `indent(2)` 的集合，start 行在缩进 1 → **视图入口永远进不去** | 加 `from_start=True`，start 行跳过校验 |
+| 3 | `commit()` 折叠判定用了**父集合**的 `coll.type` | 子集合声明 `type(dict)` 也被输出成 `[{...}]`（实测 10,462 条全是 `list1`） | 改用 `cdef.type` |
+| 4 | `-> A,B` 简写时 `top_items` 的值是 `None`，直接 append 覆盖真值 | `access-type … authentication X` 的 `AccessType`/`AuthDomain` **双双变 null** | `None` 时回查捕获组，已写过就不覆盖 |
+| 5 | `apply_writes` 只按**首段**分组，嵌套 list 字段被反复覆写 | `Ipv4Family.VpnTargets` 3 条 `vpn-target` **只剩最后 1 条** | 新增 `_list_prefix` / `_append_to_list_path` |
+| 6 | 模板侧：`(?P<X__Y>)` 手写组名不走 `norm_group` | 输出里泄漏 `QosCar__Cbs` 这种**内部展平名** | 模板改写成带点的 `(?P<X.Y>)`，由 `norm_group` 还原 |
+
+### 8.4 三条模板设计原则（都用数据验证过）
+
+**① 可选组胜过穷举**
+
+ACL rule 现网 103 种形态。穷举 `permit/deny × source/destination` 6 条规则覆盖
+**18.3%**；一条可选组规则覆盖 **100%**：
+
+```text
+^ {1}rule\s+${Sequence}\s+${Action}(?:\s+(?!source\b|destination\b|source-port\b|destination-port\b|vpn-instance\b|time-range\b|counting\b|fragment\b)${Protocol})?(?:\s+vpn-instance\s+${VpnInstance})?(?:\s+source\s+(?:user-group\s+${UserGroup}|${Source}(?:\s+${SourceMask})?))?…
+```
+
+> ⚠️ 可选组**顺序即优先级**。`${Protocol}` 用宽字符类 `[a-z-]+` 时，排在
+> `source` 前面会把关键字当协议名吃掉（`{"Action":"permit","Protocol":"source"}`）——
+> 必须用负向断言把关键字排除在协议位之外。
+
+**② 尾部一律放宽**
+
+末尾统一加 `(?:\s+.*)?\s*$`。单变量对比：
+
+| 命令 | 放宽前 | 放宽后 |
+|---|---|---|
+| `vlan-type` | 0 | 5,928 |
+| `user-vlan` | 4,324 | 28,771 |
+| `vrrp vrid` | 0 | 1,838 |
+
+**③ 不要靠 `default` 造数据**
+
+| 字段 | 旧写法 | 真实出现次数 | 后果 |
+|---|---|---|---|
+| `Mpls` | `default(true)` | 643 / 21,427 接口 | 21,427 条全 true，**20,784 条凭空造假** |
+| `ControlFlap` | `default(true)` | 15 / 21,427 | 同上 |
+| `Dcn` | `default(false)` | `undo dcn` 2,544 次，裸 `dcn` 0 次 | 18,883 条从未配置的接口被标 false |
+| `Bas.ArpTrigger` | `default(true)` | 2,582 / 10,462 个 bas 块 | 7,880 个块凭空 true |
+
+**「没出现」和「出现但取默认」是两件事，不能混。** `default` 只该用在
+「协议规定必须有、且配置里省略即等于该值」的字段上，不要用来"补全"。
+
+### 8.5 复盘：为什么旧模板 4 条规则全库 0 命中
+
+| 规则 | 旧写法 | 真实形态 | 教训 |
+|---|---|---|---|
+| `track` | `track ${Id} ${Type} ${Target}`（要求第 2 个 token 是数字） | `track monitor-group JianKong trigger-down-weight 100`（**无数字 ID**） | 凭印象写 |
+| `vlan-type` | 结尾 `\s*$` | 后面常有 `0 to 4094` 之类尾巴 | 尾部没放宽 |
+| `vrrp vrid` | 只写 `priority` 分支 | 还有 `virtual-ip` 分支 | 变体没统计全 |
+| `user-vlan` | 只写单值 | 有 `qinq 内层 外层` 组合 | 变体没统计全 |
+
+> **写规则前先统计形态**。`tools/_probe_iface_forms.py` 这类探针先看命令长什么样，
+> 再决定字段怎么拆。凭印象写规则是模板 bug 的主要来源。

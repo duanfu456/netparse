@@ -1,0 +1,579 @@
+{
+  "samples": 20,
+  "iface_lines": 166321,
+  "iface_eaten": 166317,
+  "block_counts": {
+    "Interfaces": 21427,
+    "Acls": 645,
+    "Nqas": 1254,
+    "VpnInstances": 260
+  },
+  "parsed_counts": {
+    "VpnInstances": 260,
+    "Acls": 645,
+    "Interfaces": 21427,
+    "Bgp": 20,
+    "Nqas": 1254,
+    "RouteStatics": 786,
+    "Device": 20
+  },
+  "field_fill": {
+    "Device.SysName": [
+      20,
+      20
+    ],
+    "Device.Version": [
+      20,
+      20
+    ],
+    "Device.RouterId": [
+      20,
+      20
+    ],
+    "Device.Platform": [
+      0,
+      20
+    ],
+    "Interfaces.Name": [
+      21427,
+      21427
+    ],
+    "Interfaces.Type": [
+      21427,
+      21427
+    ],
+    "Interfaces.AdminStatus": [
+      21427,
+      21427
+    ],
+    "Interfaces.Description": [
+      17376,
+      21427
+    ],
+    "Interfaces.Mtu": [
+      40,
+      21427
+    ],
+    "Interfaces.Speed": [
+      22,
+      21427
+    ],
+    "Interfaces.Duplex": [
+      22,
+      21427
+    ],
+    "Interfaces.VlanType": [
+      5928,
+      21427
+    ],
+    "Interfaces.Dot1qVlan": [
+      5928,
+      21427
+    ],
+    "Interfaces.UserVlan": [
+      10381,
+      21427
+    ],
+    "Interfaces.CarrierDownHoldTime": [
+      150,
+      21427
+    ],
+    "Interfaces.Dcn": [
+      2544,
+      21427
+    ],
+    "Interfaces.IpBindingVpn": [
+      1849,
+      21427
+    ],
+    "Interfaces.IpUrpf": [
+      4277,
+      21427
+    ],
+    "Interfaces.Ipv6Enable": [
+      4226,
+      21427
+    ],
+    "Interfaces.AccessDelay": [
+      0,
+      21427
+    ],
+    "Interfaces.DelayMode": [
+      0,
+      21427
+    ],
+    "Interfaces.PppoeTemplate": [
+      6071,
+      21427
+    ],
+    "Interfaces.EthTrunk": [
+      1453,
+      21427
+    ],
+    "Interfaces.LacpMode": [
+      1262,
+      21427
+    ],
+    "Interfaces.LacpTimeout": [
+      1258,
+      21427
+    ],
+    "Interfaces.Statistic": [
+      17438,
+      21427
+    ],
+    "Interfaces.QosCar": [
+      2206,
+      21427
+    ],
+    "Interfaces.QosProfile": [
+      202,
+      21427
+    ],
+    "Interfaces.TrafficPolicy": [
+      3329,
+      21427
+    ],
+    "Interfaces.Pim": [
+      2471,
+      21427
+    ],
+    "Interfaces.Igmp": [
+      2431,
+      21427
+    ],
+    "Interfaces.Isis": [
+      61,
+      21427
+    ],
+    "Interfaces.Vrrp": [
+      1213,
+      21427
+    ],
+    "Interfaces.Track": [
+      1494,
+      21427
+    ],
+    "Interfaces.DefaultPasswordTemplate": [
+      0,
+      21427
+    ],
+    "Interfaces.DhcpSelect": [
+      100,
+      21427
+    ],
+    "Interfaces.L2Binding": [
+      73,
+      21427
+    ],
+    "Interfaces.TrustUpstream": [
+      41,
+      21427
+    ],
+    "Interfaces.Mpls": [
+      41,
+      21427
+    ],
+    "Interfaces.MplsLdp": [
+      41,
+      21427
+    ],
+    "Interfaces.MplsL2vc": [
+      20,
+      21427
+    ],
+    "Interfaces.Ipv6Mtu": [
+      40,
+      21427
+    ],
+    "Interfaces.ControlFlap": [
+      15,
+      21427
+    ],
+    "Interfaces.OspfAuthMode": [
+      12,
+      21427
+    ],
+    "Interfaces.OspfNetworkType": [
+      12,
+      21427
+    ],
+    "Interfaces.OspfCost": [
+      2,
+      21427
+    ],
+    "Interfaces.OspfTimer": [
+      2,
+      21427
+    ],
+    "Interfaces.MplsLdpTimer": [
+      41,
+      21427
+    ],
+    "Interfaces.IpRelayAddress": [
+      4,
+      21427
+    ],
+    "Interfaces.NasLogicInterface": [
+      1168,
+      21427
+    ],
+    "Interfaces.NasLogicAddress": [
+      3,
+      21427
+    ],
+    "Interfaces.PortObserving": [
+      1,
+      21427
+    ],
+    "Interfaces.PortMirroring": [
+      7,
+      21427
+    ],
+    "Interfaces.Negotiation": [
+      10,
+      21427
+    ],
+    "Interfaces.ForwardMode": [
+      2,
+      21427
+    ],
+    "Interfaces.MacAddress": [
+      4,
+      21427
+    ],
+    "Interfaces.IpAddress.Address": [
+      10231,
+      10231
+    ],
+    "Interfaces.IpAddress.Mask": [
+      6379,
+      10231
+    ],
+    "Interfaces.IpAddress.Family": [
+      10231,
+      10231
+    ],
+    "Interfaces.IpAddress.Mode": [
+      3754,
+      10231
+    ],
+    "Interfaces.IpAddress.AddressType": [
+      102,
+      10231
+    ],
+    "Interfaces.Bas.AccessType": [
+      10440,
+      10462
+    ],
+    "Interfaces.Bas.AuthDomain": [
+      8774,
+      10462
+    ],
+    "Interfaces.Bas.PreAuthDomain": [
+      1666,
+      10462
+    ],
+    "Interfaces.Bas.Method": [
+      6759,
+      10462
+    ],
+    "Interfaces.Bas.NasLogicIp": [
+      6020,
+      10462
+    ],
+    "Interfaces.Bas.NasLogicPort": [
+      5975,
+      10462
+    ],
+    "Interfaces.Bas.Option82": [
+      5706,
+      10462
+    ],
+    "Interfaces.Bas.ArpTrigger": [
+      2582,
+      10462
+    ],
+    "Interfaces.Bas.IpTrigger": [
+      2570,
+      10462
+    ],
+    "Interfaces.Bas.ArpProxy": [
+      2509,
+      10462
+    ],
+    "Interfaces.Bas.AccessDelay": [
+      3249,
+      10462
+    ],
+    "Interfaces.Bas.DelayMode": [
+      3047,
+      10462
+    ],
+    "Interfaces.Bas.UserDetect": [
+      2407,
+      10462
+    ],
+    "Interfaces.Bas.VpnInstance": [
+      2489,
+      10462
+    ],
+    "Interfaces.Bas.DefaultPasswordTemplate": [
+      2406,
+      10462
+    ],
+    "Interfaces.Bas.NasPortType": [
+      11,
+      10462
+    ],
+    "RouteStatics.Prefix": [
+      786,
+      786
+    ],
+    "RouteStatics.Mask": [
+      786,
+      786
+    ],
+    "RouteStatics.NextHop": [
+      786,
+      786
+    ],
+    "RouteStatics.NextHopIface": [
+      0,
+      786
+    ],
+    "RouteStatics.Preference": [
+      118,
+      786
+    ],
+    "RouteStatics.Description": [
+      356,
+      786
+    ],
+    "RouteStatics.VpnInstance": [
+      581,
+      786
+    ],
+    "VpnInstances.Name": [
+      260,
+      260
+    ],
+    "VpnInstances.Description": [
+      1,
+      260
+    ],
+    "VpnInstances.VpnIpv4Family.RouteDistinguisher": [
+      260,
+      260
+    ],
+    "VpnInstances.VpnIpv4Family.ApplyLabel": [
+      260,
+      260
+    ],
+    "VpnInstances.VpnIpv4Family.VpnTargets": [
+      260,
+      260
+    ],
+    "VpnInstances.VpnIpv6Family.RouteDistinguisher": [
+      20,
+      20
+    ],
+    "VpnInstances.VpnIpv6Family.ApplyLabel": [
+      20,
+      20
+    ],
+    "VpnInstances.VpnIpv6Family.VpnTargets": [
+      20,
+      20
+    ],
+    "Bgp.AsNumber": [
+      20,
+      20
+    ],
+    "Bgp.RouterId": [
+      20,
+      20
+    ],
+    "Bgp.Private4ByteAs": [
+      20,
+      20
+    ],
+    "Bgp.Groups": [
+      0,
+      20
+    ],
+    "Bgp.Networks": [
+      20,
+      20
+    ],
+    "Bgp.BgpGroups.Name": [
+      80,
+      80
+    ],
+    "Bgp.BgpGroups.Type": [
+      40,
+      80
+    ],
+    "Bgp.BgpGroups.Description": [
+      80,
+      80
+    ],
+    "Bgp.BgpGroups.ConnectInterface": [
+      40,
+      80
+    ],
+    "Bgp.BgpGroups.PasswordType": [
+      23,
+      80
+    ],
+    "Bgp.BgpGroups.Password": [
+      23,
+      80
+    ],
+    "Bgp.BgpPeers.Peer": [
+      81,
+      81
+    ],
+    "Bgp.BgpPeers.AsNumber": [
+      81,
+      81
+    ],
+    "Bgp.BgpPeers.Group": [
+      80,
+      81
+    ],
+    "Bgp.BgpPeers.Description": [
+      40,
+      81
+    ],
+    "Bgp.BgpPeers.ConnectInterface": [
+      1,
+      81
+    ],
+    "Bgp.BgpPeers.PasswordType": [
+      34,
+      81
+    ],
+    "Bgp.BgpPeers.Password": [
+      34,
+      81
+    ],
+    "Acls.Number": [
+      645,
+      645
+    ],
+    "Acls.Name": [
+      0,
+      645
+    ],
+    "Acls.Description": [
+      579,
+      645
+    ],
+    "Acls.AclRules.Sequence": [
+      14723,
+      14723
+    ],
+    "Acls.AclRules.Action": [
+      14723,
+      14723
+    ],
+    "Acls.AclRules.Protocol": [
+      12045,
+      14723
+    ],
+    "Acls.AclRules.VpnInstance": [
+      26,
+      14723
+    ],
+    "Acls.AclRules.Source": [
+      3522,
+      14723
+    ],
+    "Acls.AclRules.SourceMask": [
+      3522,
+      14723
+    ],
+    "Acls.AclRules.UserGroup": [
+      4006,
+      14723
+    ],
+    "Acls.AclRules.SourcePort": [
+      15,
+      14723
+    ],
+    "Acls.AclRules.Destination": [
+      9191,
+      14723
+    ],
+    "Acls.AclRules.DestinationMask": [
+      9191,
+      14723
+    ],
+    "Acls.AclRules.DestPort": [
+      2739,
+      14723
+    ],
+    "Acls.AclRules.TimeRange": [
+      0,
+      14723
+    ],
+    "Nqas.Name": [
+      1234,
+      1254
+    ],
+    "Nqas.InstanceId": [
+      1234,
+      1254
+    ],
+    "Nqas.Type": [
+      20,
+      1254
+    ],
+    "Nqas.TestType": [
+      1234,
+      1254
+    ],
+    "Nqas.Destination": [
+      1234,
+      1254
+    ],
+    "Nqas.ProbeCount": [
+      1234,
+      1254
+    ],
+    "Nqas.DataSize": [
+      1234,
+      1254
+    ],
+    "Nqas.VpnInstance": [
+      1039,
+      1254
+    ],
+    "Nqas.NqaSessions.SessionId": [
+      40,
+      40
+    ],
+    "Nqas.NqaSessions.LocalIp": [
+      40,
+      40
+    ],
+    "Nqas.NqaSessions.RemoteIp": [
+      40,
+      40
+    ],
+    "Nqas.NqaSessions.LocalPort": [
+      40,
+      40
+    ],
+    "Nqas.NqaSessions.RemotePort": [
+      40,
+      40
+    ],
+    "Nqas.NqaSessions.LinkBundleInterface": [
+      40,
+      40
+    ]
+  },
+  "iface_coverage": 100.0
+}
