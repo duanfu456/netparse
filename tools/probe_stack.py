@@ -584,8 +584,33 @@ def run(colls, lines, trace=None):
         if not line.strip():
             continue
         st = line.strip()
-        if st.startswith("#") and len(st) <= 2:
+        # 裸 `#` / `!` 是**块分隔符**，不是注释：华为全量配置 100% 用 `#`
+        # （222 万行抽样：`#` 249282 次、`!` 0 次）。它必须参与 end 出栈，
+        # 否则模板里声明的 end(^#$) 永远不生效 —— 分层级会一路挂着不收起，
+        # 后续无 start 的块（如 aaa）里的 description 会被归到上一个接口上。
+        if len(st) <= 2 and st[:1] in ("#", "!"):
+            # 一个分隔符关闭整条嵌套块：从栈顶向下找最深一个「end 能匹配」的层，
+            # 把它连同其上所有层一起收起；再重复，处理 Acls→AclRules 这种多层同时结束。
+            while len(stack) > 1:
+                stop = None
+                for depth in range(len(stack) - 1, 0, -1):
+                    if stack[depth].coll.end_re and stack[depth].coll.end_re.search(line):
+                        stop = depth
+                        break
+                if stop is None:
+                    break
+                while len(stack) > stop + 1:
+                    fr = stack.pop()
+                    commit(fr)
+                    frame_of.pop(fr.coll.name, None)
+                fr = stack.pop()
+                commit(fr)
+                frame_of.pop(fr.coll.name, None)
+            if trace is not None:
+                trace.append((no, line, None, [f.coll.name for f in stack]))
             continue
+        if st.startswith("#"):
+            continue        # 非裸 `#` 的长行仍按注释处理
 
         # ① 找命中的 start：从栈顶向下，每层先看自己、再看子集合；
         #    最后看尚未激活的顶层集合

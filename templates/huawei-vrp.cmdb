@@ -26,7 +26,7 @@ RouterId  type(str) reg(\S+) desc(Router ID)
 # 实测 802 个：Eth-Trunk 664（其中 620 个是 Eth-TrunkN.MMM 子接口）
 #               GigabitEthernet 120 / HP-GE 4 / Virtual-* 7
 #               Vlanif 1 / LoopBack 1 / NULL0 1
-Interfaces type(list) start(^interface\s+) desc(接口集合)
+Interfaces type(list) start(^interface\s+) end(^#$) desc(接口集合)
 [value]
 Name          type(str)  reg(\S+) desc(接口名) option(Key)
 Type          type(str)  default(unknown) desc(接口类型)
@@ -144,7 +144,7 @@ VpnInstance  type(str) reg(\S+) desc(所属 VPN 实例) option(Key)
       -> RouteStatics{Prefix,Mask,NextHopIface,NextHop,Preference,Description}
 
 # ── VPN 实例 ─────────────────────────────────────────
-VpnInstances type(list) start(^ip vpn-instance) desc(VPN实例)
+VpnInstances type(list) start(^ip vpn-instance) end(^#$) desc(VPN实例)
 [value]
 Name               type(str) reg(\S+) desc(名称) option(Key)
 RouteDistinguisher type(str) reg(\S+) desc(RD)
@@ -194,7 +194,7 @@ Groups         type(list) desc(邻居组)
   ^\s*peer\s+${Peer}\s+password\s+cipher\s+${Password}\s*$       -> BgpPeers{Peer,PasswordType="cipher",Password}
 
 # ── ACL ──────────────────────────────────────────────
-Acls type(list) start(^acl number) desc(ACL)
+Acls type(list) start(^acl number) end(^#$) desc(ACL)
 [value]
 Number      type(int) reg(\d+) desc(ACL 号) option(Key)
 Description type(str) reg(.+) desc(描述)
@@ -203,7 +203,7 @@ Description type(str) reg(.+) desc(描述)
 ^\s*description\s+${Description}\s*$
 
   # ── ACL 规则（子层）────────────────────────────────
-  AclRules type(list) start(^\s*rule) desc(ACL规则)
+  AclRules type(list) start(^\s*rule) end(^#$) desc(ACL规则)
   [value]
   Sequence        type(int)  reg(\d+) desc(序号) option(Required)
   Action          type(str)  reg(permit|deny) desc(动作)
