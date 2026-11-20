@@ -669,12 +669,24 @@ def run(colls, lines, trace=None):
                 trace.append((no, line, hit_name, [f.coll.name for f in stack]))
             continue
 
-        # ② 栈顶的 end 命中 → 出栈
-        top = stack[-1]
-        if top.coll.end_re and top.coll.end_re.search(line):
-            commit(top)
-            stack.pop()
-            frame_of.pop(top.coll.name, None)
+        # ② end 命中 → 出栈：从栈顶向下找「第一个 end 能匹配」的层，收起它连同其上所有子层。
+        #    只收最内层（方案 X），不一路收到底 —— 一路收到底是分隔符 `#` 的专属语义，
+        #    普通 end 命令（如 Nokia 的 exit）应该只关当前最内层块。
+        #    为什么不能只查栈顶：Nokia 的 interface 块内常有 ipv6/egress 等子块，
+        #    栈顶是子集合时父集合的 end 会匹配不到，导致 exit 永远关不掉接口块。
+        stop = None
+        for depth in range(len(stack) - 1, 0, -1):
+            if stack[depth].coll.end_re and stack[depth].coll.end_re.search(line):
+                stop = depth
+                break
+        if stop is not None:
+            while len(stack) > stop + 1:
+                fr = stack.pop()
+                commit(fr)
+                frame_of.pop(fr.coll.name, None)
+            fr = stack.pop()
+            commit(fr)
+            frame_of.pop(fr.coll.name, None)
 
         # ③ 栈顶向下匹配；不匹配继续父层
         for depth in range(len(stack) - 1, -1, -1):

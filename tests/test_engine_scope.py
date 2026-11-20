@@ -158,6 +158,34 @@ interface Eth-Trunk1
           len(deep_if) == 1 and deep_if[0].get("Description") == "uplink",
           "实际：" + repr(deep_if))
 
+    # 普通 end 命令（非分隔符）：从栈顶向下找「第一个 end 能匹配」的层收起，
+    # 而不是只看栈顶。Nokia 的 interface 块内常有 ipv6/egress 子块，
+    # 栈顶是子集合时，父集合的 end 会匹配不到（曾导致 exit 永远关不掉接口块）。
+    NESTED_END_TEMPLATE = """\
+Outer type(list) start(^outer\\s+) end(^done\\s*$)
+[value]
+Name type(str) reg(\\S+) desc(名) option(Key)
+[rule]
+^outer\\s+${Name}
+
+  Item type(list) start(^\\s*item\\s+)
+  [value]
+  Id type(int) reg(\\d+) desc(编号)
+  [rule]
+  ^\\s*item\\s+${Id}\\s*$
+"""
+    # 场景：outer 块内先有 item 子集合压栈，随后 done 到来 ——
+    # 栈顶是 Item（end 为 None），旧逻辑只查栈顶会漏掉 done → Outer 永不关闭。
+    nested_cfg = "outer o1\n item 1\n item 2\ndone\n"
+    nested, nested_trace = run(NESTED_END_TEMPLATE, nested_cfg)
+    check("普通 end 从栈顶向下找匹配层（子集合挡顶时不失效）",
+          [it["Name"] for it in nested.get("Outer", [])] == ["o1"]
+          and [it["Id"] for it in nested["Outer"][0].get("Item", [])] == [1, 2],
+          "实际：" + repr(nested.get("Outer")))
+    check("end 命令执行后栈已收起",
+          nested_trace[-1][3] == ["__root__"],
+          "实际：" + repr(nested_trace[-1][3]))
+
     print("引擎作用域验收：%d 项通过 / %d 项失败" % (PASSED, len(FAILURES)))
     for failure in FAILURES:
         print("  -", failure)
