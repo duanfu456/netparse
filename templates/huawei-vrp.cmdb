@@ -60,7 +60,11 @@ Platform  type(str) reg(\S+) desc(设备型号)
 Interfaces type(list) start(^interface\s+) end(^#$) end_indent(0) desc(接口集合)
 [value]
 Name          type(str)  reg(\S+) desc(接口名) option(Key)
-Type          type(str)  default(unknown) desc(接口类型)
+# Type（接口类型）：现网 21,427 个接口 100% 是 default(unknown) ——
+# 没有任何规则写它，这是上一轮审查漏掉的「default 造假」第 7 例。
+# 接口类型应由资产层从 Name 派生（Eth-Trunk/GigabitEthernet/Vlanif…），
+# 引擎层不臆造。等 transform 能力落地后再删这个字段。
+Type          type(str)  desc(接口类型；当前无规则写入，由资产层从 Name 派生)
 AdminStatus   type(str)  default(up) reg(up|down) desc(管理状态)
 Description   type(str)  reg(.+) desc(描述)
 Mtu           type(int)  reg(\d+) desc(MTU)
