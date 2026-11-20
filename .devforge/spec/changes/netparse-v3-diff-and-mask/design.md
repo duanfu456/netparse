@@ -411,9 +411,13 @@
 
 ---
 
-### D10 · 引擎代码位置：**本批不抽包**，保留 `tools/probe_stack.py` 为唯一实现
+### D10 · 引擎代码位置：~~本批不抽包~~ → **已抽包为 `src/netparse/`（后续变更反转）**
 
-**决策**：脱敏改动**直接改** `tools/probe_stack.py`；新代码（适配器、diff 工具）放在 `tools/` 或新建 `src/netparse/`，但**通过 `sys.path` import 现有的 `tools/probe_stack.py`**（与 `tests/run_regression.py:17` 现有做法一致：`sys.path.insert(0, os.path.join(ROOT, "tools"))`）。
+> **状态：已被反转。** 本决策在能力 B 收尾后被独立变更「代码规整为 Python 库」推翻，
+> 引擎现位于 `src/netparse/engine.py`，`tools/probe_stack.py` 降级为兼容 shim。
+> 反转理由与执行结果见本节末尾「反转记录」。下面是**当时的原始决策**，保留作归因依据。
+
+**原始决策**：脱敏改动**直接改** `tools/probe_stack.py`；新代码（适配器、diff 工具）放在 `tools/` 或新建 `src/netparse/`，但**通过 `sys.path` import 现有的 `tools/probe_stack.py`**（与 `tests/run_regression.py:17` 现有做法一致：`sys.path.insert(0, os.path.join(ROOT, "tools"))`）。
 
 **理由**：
 - **13 个探针脚本全部 `import probe_stack`**（`probe_stack.py:761` 被 `probe_coverage2/3.py`、`probe_acl_rules.py`、`probe_flat2.py`、`probe_blind.py` 等引用）。抽包 = 改 import 路径 = **打断全部探针** + 打断回归脚本。
@@ -426,6 +430,28 @@
 - ❌ **复制一份引擎到 `src/`**：两份实现必然漂移，是最坏选项。
 
 **代价**：引擎继续待在 `tools/`（观感不佳），且 `sys.path` hack 继续存在。**缓解**：在 `design.md` 与 `tasks.md` 里显式记录这条技术债，并在 `docs/FINAL-plan.md` 8.4 的"引擎正式化"项里注明"需处理 13 个探针的 import 迁移"。
+
+**反转记录（代码规整为 Python 库）**
+
+原决策的核心顾虑是「抽包 = 打断 13 个探针 + 回归脚本」。该顾虑**成立但可解**，做法是
+**shim + 一次性迁移**而不是「二选一」：
+
+| 顾虑 | 实际解法 | 结果 |
+|---|---|---|
+| 13 个探针 `import probe_stack` 会断 | 探针迁入 `tools/legacy/`，import 改成 `from netparse import engine as P` | 14 个探针全部可跑（`test_cli.py` 有断言） |
+| 文档 51+ 处 `python tools/probe_stack.py` 会失效 | `tools/*.py` 保留薄 shim 转发到 `netparse` 子命令 | 旧命令逐字可用（`--lint` 参数也做了翻译） |
+| 回归脚本靠 `sys.path` | `tests/*` 改 `sys.path.insert(0, ROOT/"src")` + `from netparse import ...` | 5 个测试全绿 |
+
+**新增的实质收益**（原决策低估的部分）：
+- `pyproject.toml` + `[project.scripts]` ⇒ `pip install -e .` 后 `netparse` 命令在**任意目录**可用；
+- `paths.py` 用「向上找 `pyproject.toml`」定位仓库根，替代 `dirname(__file__)` 的脆弱算法；
+- `MaskingConfig(CONFIG)` 单例替代两个模块级全局，堵住「`from ... import MASK_HEURISTIC` 拿到副本、赋值静默失效」这一类 bug；
+- `diff` 对生产 `build_excel` 的依赖改为**惰性**，`netparse parse` 在没有生产盘的机器上不再被连带拖死；19 列口径冻结 + 运行期漂移校验。
+
+**行为等价性验证**（抽包不能改变解析结果）：
+- HEAD 原引擎 vs 新包引擎，60 台真实华为配置 + 4 个 fixture + 2 套模板，**逐字节一致**；
+- `netparse diff --sample 20 --jobs 4`：接口 join `18114/0/0`、文件奇偶校验 `20/20`、
+  路由修前丢 `39/39（100%）` 修后丢 `0`、L1=164 / L2=2 —— 与库化前同一批文件的硬指标一致。
 
 ---
 

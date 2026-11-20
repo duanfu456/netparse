@@ -759,23 +759,45 @@ L1=68010 / L2=246 处被遮蔽，diff 报告零明文（`%^%#` 残留 0）。
 ## 9. 文件清单
 
 ```
-netparse/
+netparse/                      ← 已规整为 Python 库（pyproject.toml，零第三方依赖）
+├─ pyproject.toml           ← 打包与入口（netparse 子命令）
+├─ README.md                ← 库用法（作为库 / 作为命令行）
 ├─ docs/
 │  ├─ FINAL-plan.md        ← 本文（总方案）
 │  └─ TEMPLATE-GUIDE.md   ← 模板编写手册（语法 + 场景）
+├─ src/netparse/            ← 包本体
+│  ├─ engine.py             ← 嵌套状态栈引擎（parse_template / run / lint / compile_rule）
+│  ├─ masking.py            ← 脱敏策略（L1 type(secret) + L2 密文形态兜底）
+│  ├─ paths.py              ← 仓库路径解析（模板 / 变更规格目录）
+│  ├─ adapters/incumbent.py ← 纯结构适配器（netparse JSON → incumbent 形状）
+│  └─ cli/                  ← 命令行子命令
+│     ├─ parse.py           ← netparse parse / lint
+│     ├─ diff.py            ← netparse diff（19 列三栏）
+│     ├─ route_forms.py     ← netparse route-forms
+│     └─ readonly.py        ← netparse readonly
 ├─ templates/
 │  ├─ huawei-vrp.cmdb      ← 华为 VRP，12 个集合（含 5 个子集合）★ 唯一交付模板
 │  └─ nokia-sros.cmdb      ← Nokia SR OS，1 集合 + 2 子集合（实验用，未完成）
 ├─ tests/
 │  ├─ fixtures/            ← 回归基线（sample-vrp.txt + expected.json）
-│  └─ run_regression.py    ← 回归比对（--update 覆盖基线）
-└─ tools/                  ← 探针与原型
-   ├─ probe_stack.py       ← 嵌套状态栈引擎（当前唯一实现，含 trace 埋点）
-   ├─ probe_coverage*.py   ← 命令覆盖率统计
-   ├─ probe_flat*.py       ← 扁平化可行性验证
-   ├─ probe_acl*.py        ← ACL 规则形态与覆盖率验证
-   ├─ probe_blind.py       ← 引擎盲区（end/inherit/重名/正则/命名组/类型转换）
-   └─ probe_{state,indent_tree,format,interfaces,nested}.py ← 历史探针
+│  ├─ run_regression.py    ← 回归比对（--update 覆盖基线）
+│  ├─ test_engine_scope.py ← 引擎作用域验收（#/! 分隔符、end 匹配）
+│  ├─ test_masking.py      ← 脱敏单元测试
+│  ├─ test_adapter.py      ← 适配器映射样例
+│  ├─ test_diff_incumbent.py ← diff 工具纯逻辑
+│  └─ test_cli.py          ← CLI 与包结构验收
+└─ tools/
+   ├─ probe_stack.py       ← 兼容 shim（转发 netparse parse；旧命令仍可用）
+   ├─ masking.py           ← 兼容 shim（转发 netparse.masking）
+   ├─ diff_incumbent.py    ← 兼容 shim（转发 netparse diff）
+   ├─ check_route_forms.py ← 兼容 shim（转发 netparse route-forms）
+   ├─ readonly_guard.py    ← 兼容 shim（转发 netparse readonly）
+   └─ legacy/              ← 14 个历史探针（一次性诊断，已改用 netparse.engine）
+      ├─ probe_coverage*.py ← 命令覆盖率统计
+      ├─ probe_flat*.py     ← 扁平化可行性验证
+      ├─ probe_acl*.py      ← ACL 规则形态与覆盖率验证
+      ├─ probe_blind.py     ← 引擎盲区（end/inherit/重名/正则/命名组/类型转换）
+      └─ probe_{state,indent_tree,format,interfaces,nested,sampling}.py
 ```
 
 **既有生产管线（不在本仓库，但可复用）**

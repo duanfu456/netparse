@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netparse"
+version = "0.3.0"
+description = "网络设备配置解析器：模板 DSL + 嵌套状态栈，把华为/中兴/Nokia 配置解析成结构化 JSON"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Proprietary" }
+keywords = ["networking", "configuration", "parser", "cmdb", "huawei", "nokia", "zte"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Networking",
+    "Topic :: Text Processing :: Markup",
+]
+# 零运行时第三方依赖：引擎只用标准库（re / collections / json）。
+dependencies = []
+
+[project.optional-dependencies]
+# 开发与测试只需要标准库；diff 子命令额外要求能只读访问生产脚本目录（环境依赖，不是 pip 依赖）。
+dev = []
+
+[project.scripts]
+netparse = "netparse.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+netparse = ["py.typed"]

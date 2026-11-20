@@ -1,4 +1,8 @@
-"""diff 工具的本地小样本验收；不读取或修改生产配置文件。"""
+"""diff 工具的本地小样本验收；不读取或修改生产配置文件。
+
+被测对象是 `netparse.cli.diff`。该模块对生产 build_excel 的依赖是惰性的，
+所以这个测试在没挂生产盘的机器上也能跑 —— 但涉及真实 19 列口径的断言会跳过。
+"""
 
 import copy
 import json
@@ -7,9 +11,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "tools"))
+sys.path.insert(0, os.path.join(ROOT, "src"))
 
-import diff_incumbent as d  # noqa: E402
+from netparse.cli import diff as d  # noqa: E402
 
 FAILURES = []
 PASSED = 0
@@ -198,7 +202,9 @@ def main():
     check("合并后逐文件数计入", len(state["per_file"]) == 1)
     check("合并后接口计数归零不误增", state["parity"]["files_matched"] == 1)
     # 临时产物必须保留原文件名：采集时间取自文件名末尾时间戳。
-    src = open(os.path.join(ROOT, "tools", "diff_incumbent.py"), encoding="utf-8").read()
+    # 读真实实现（src/netparse/cli/diff.py），不是 tools/ 的兼容 shim ——
+    # shim 里根本没有这段逻辑，对着它断言等于什么都没测。
+    src = open(os.path.join(ROOT, "src", "netparse", "cli", "diff.py"), encoding="utf-8").read()
     check("临时产物沿用原文件名",
           'entry["stem"] + ".json"' in src and "netparse-entry-" not in src)
 

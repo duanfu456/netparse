@@ -6,10 +6,11 @@
 用法：python tools/probe_interfaces.py <配置文件路径> [显示数量]
 """
 
+import os
 import sys
 from collections import Counter
 
-sys.path.insert(0, __file__.rsplit("\\", 1)[0])
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src"))
 from probe_indent_tree import build_tree  # noqa: E402
 
 

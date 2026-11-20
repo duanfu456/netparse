@@ -537,7 +537,62 @@
 
 ---
 
-## 附：实施阶段最容易翻车的 3 个点
+## 4. 代码规整为 Python 库（能力 A/B 收尾后追加）
+
+> 反转 `design.md D10`（原「本批不抽包」）。目标：能 `pip install -e .`，能 `import netparse`，
+> 能 `netparse <子命令>`，且**解析结果与抽包前逐字节一致**。
+
+- [x] **4.1 包骨架与打包**
+  - 改动：新建 `pyproject.toml`（setuptools + src layout，`[project.scripts] netparse = "netparse.cli:main"`，零运行时依赖）；
+    `src/netparse/paths.py`（向上找 `pyproject.toml` 定位仓库根，替代 `dirname(__file__)`）；
+    `src/netparse/__init__.py` 导出全部公共 API；`src/netparse/__main__.py`、`cli/__main__.py`
+  - 验证：`pip install -e .` 成功；`netparse --version` 在**任意目录**输出 `netparse 0.3.0`；
+    `netparse lint templates/huawei-vrp.cmdb` 从 `/tmp` 也能找到模板
+
+- [x] **4.2 引擎与脱敏迁入包**
+  - 改动：`tools/probe_stack.py` → `src/netparse/engine.py`（删 `main()` / `sys.path` hack / `__main__` 块）；
+    `tools/masking.py` → `src/netparse/masking.py`
+  - ⚠️ **关键改动**：`MASK_VALUE` / `MASK_HEURISTIC` 两个模块级全局改为 `masking.CONFIG` 单例。
+    原因：`__init__.py` 里 `from .engine import MASK_HEURISTIC` 会**拷贝出副本**，
+    外部赋值落在副本上、引擎读原变量 → 「设了没生效」且不报错。
+    `engine` 模块用 PEP 562 `__getattr__` + 模块类替换 `__setattr__` 保留旧的读写写法
+  - 验证：`engine.MASK_HEURISTIC = False` 后 `netparse.CONFIG.heuristic is False`（`test_cli.py` 断言）
+
+- [x] **4.3 CLI 收敛为单一入口 + 子命令**
+  - 改动：`src/netparse/cli/{parse,diff,route_forms,readonly}.py`；
+    `diff` / `route_forms` / `readonly` 的参数在子模块里惰性注册，避免主入口被生产依赖拖死
+  - 同时修掉的原有缺陷：
+    - `diff` 的 `import build_excel` 从**模块级**改为 `load_build_excel()` 惰性加载 +
+      19 列口径冻结副本 + 运行期漂移校验（原版模块级 import，没挂生产盘时连 `probe_stack` 都 import 不了）
+    - `check_route_forms.py` docstring 里写了 `--file` 但**从未实现**，argparse 直接拒；现补上 `single_file()`
+    - `probe_stack` 手写 argv 解析 → `argparse`（`--help` 可用）
+    - 报告里的模板路径统一走 `rel()` 输出 POSIX 风格，避免 Windows 产出 `templates\xxx` 导致跨平台不可复现
+  - 验证：`netparse parse/lint` 全通；`netparse diff --sample 20 --jobs 4` 跑通
+
+- [x] **4.4 `tools/` 兼容 shim + skill 迁移**
+  - 改动：`tools/{probe_stack,masking,diff_incumbent,check_route_forms,readonly_guard}.py` 改薄 shim
+    （转发到 `netparse`，且 `MASK_*` 读写代理到 `CONFIG`；`--lint` 参数翻译成 `lint` 子命令）；
+    14 个历史探针迁入 `tools/legacy/`，import 改 `from netparse import engine as P`
+  - 顺手修的缺陷：`probe_interfaces.py` / `probe_nested.py` 用 `__file__.rsplit("\\", 1)[0]`（只在 Windows 可用）
+    且**没 import os**；`probe_sampling.py` 的 `ROOT` 少算一层
+  - 验证：`python tools/probe_stack.py <模板> <配置> --lint` 等价于 `netparse lint`；
+    `python tools/legacy/probe_coverage3.py <模板> <配置>` 可跑
+
+- [x] **4.5 测试改指向包**
+  - 改动：5 个测试的 `sys.path.insert(0, ROOT/"tools")` → `ROOT/"src"`，`import probe_stack` → `from netparse import ...`；
+    新增 `tests/test_cli.py`（20 项：公共 API / CLI / shim / legacy 探针）
+  - 验证：引擎作用域 11、脱敏 55、适配器 167、diff 72、回归 2 fixture/14 记录、CLI 20 —— **全部通过**
+
+- [x] **4.6 行为等价性验证（最关键，防重构引入回归）**
+  - 方法：`git show HEAD:tools/probe_stack.py` 导出原引擎，与新包引擎对同一批配置逐字节比对
+  - 结果：**60 台真实华为配置 + 4 个 fixture + 2 套模板全部一致**；
+    `netparse diff --sample 20` 硬指标与库化前同批文件一致（接口 join `18114/0/0`、文件奇偶 `20/20`、
+    路由修前丢 `39/39` 修后丢 `0`、L1=164 / L2=2）
+  - ⚠️ **不能**拿 `diff-report/equiv-j1|j4` 当基线：那两个产物早于 `cc1d55c`（`#` 分隔符修复），
+    `trace.records[].stack` 会显示 7 帧（层级没关掉），与当前实现天然不同
+
+---
+
 
 > 详细分析见 `design.md` 的 Risks 表（R1/R5/R6）与本清单各任务的 ⚠️ 标注。
 

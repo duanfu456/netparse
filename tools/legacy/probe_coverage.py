@@ -13,8 +13,8 @@ import re
 import sys
 from collections import Counter, OrderedDict
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import probe_stack as P  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src"))
+from netparse import engine as P  # noqa: E402
 
 
 # ── 骨架归一化：把参数换成占位符，留下命令结构 ──────────────

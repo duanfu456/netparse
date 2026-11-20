@@ -62,7 +62,7 @@ interface GigabitEthernet1/0/0
 | **键与必填写在字段上** | `option(Key)` / `option(Required)`，集合声明里不写 |
 | **省略 `->` 时** | 捕获组名即目标列名，落在**当前集合当前记录** |
 | **子集合自动归属父元素** | 不需要 `inherit=`，也不需要重复父层的 key |
-| **没写规则的命令会丢** | 引擎**不兜底**；用 `tools/probe_coverage3.py` 查哪些命令族没被覆盖 |
+| **没写规则的命令会丢** | 引擎**不兜底**；用 `python tools/legacy/probe_coverage3.py` 查哪些命令族没被覆盖 |
 
 ---
 
@@ -712,7 +712,7 @@ TrackWeight type(int) reg(\d+) desc(权重)
 ^\s*track\s+monitor-group\s+${TrackGroup}\s+trigger-down-weight\s+${TrackWeight}\s*$
 ```
 
-> **写规则前先统计形态**：`python tools/probe_acl_rules.py <配置>` 这类探针可以先看命令长什么样，
+> **写规则前先统计形态**：`python tools/legacy/probe_acl_rules.py <配置>` 这类探针可以先看命令长什么样，
 > 再决定字段怎么拆。**凭印象写规则是模板 bug 的主要来源**——
 > 上面 5 条里，现网模板有 4 条写错了（`vlan-type` / `user-vlan` / `vrrp` / `track` 全都没命中过）。
 
@@ -721,8 +721,11 @@ TrackWeight type(int) reg(\d+) desc(权重)
 ## 5. Lint —— 模板写完必跑
 
 ```bash
-python tools/probe_stack.py <模板> <配置文件> --lint
+netparse lint <模板>
 ```
+
+> 旧写法 `python tools/probe_stack.py <模板> <配置> --lint` 仍可用（`tools/` 留了兼容 shim），
+> 但 `netparse lint` 是现在的正式入口。
 
 ### 5.1 已经实现的检查（会真的报错）
 
@@ -754,7 +757,7 @@ python tools/probe_stack.py <模板> <配置文件> --lint
 它保证一个接口不漏。当前用探针跑：
 
 ```bash
-python tools/probe_coverage3.py templates/huawei-vrp.cmdb <配置文件>
+python tools/legacy/probe_coverage3.py templates/huawei-vrp.cmdb <配置文件>
 ```
 
 输出按**命令族**给覆盖率与缺口样例。实测（华为 ME60-X16A）：
@@ -779,7 +782,7 @@ python tools/probe_coverage3.py templates/huawei-vrp.cmdb <配置文件>
 5.3 是**单台设备、命令族行数**口径；下面这张是**跨月语料、19 列台账值条数**口径。
 两者分母不同，**不能相互印证或换算**。
 
-复现：`python tools/diff_incumbent.py --all --jobs 12`（20 文件抽样结果与全量方向一致）
+复现：`netparse diff --all --jobs 12`（20 文件抽样结果与全量方向一致）
 
 | 列 | incumbent | netparse 修前 | netparse 修后 | 证据化根因 |
 |---|---|---|---|---|
@@ -843,13 +846,17 @@ python tools/probe_coverage3.py templates/huawei-vrp.cmdb <配置文件>
 
 | 命令 | 作用 |
 |---|---|
-| `python tools/probe_stack.py <模板> <配置>` | 解析并打印集合树 + 结果统计 |
-| `python tools/probe_stack.py <模板> <配置> --json` | 输出完整 JSON |
-| `python tools/probe_stack.py <模板> <配置> --lint` | 只跑模板体检 |
-| `python tools/probe_coverage3.py <模板> <配置>` | **命令族覆盖率 + 缺口样例**（写完模板必跑） |
-| `python tools/probe_coverage2.py <模板> <配置>` | 全量覆盖率 + 零覆盖命令族清单 |
-| `python tools/probe_blind.py` | 引擎边界行为用例（end / inherit / 重名 / 正则 / 命名组） |
+| `netparse parse <模板> <配置>` | 解析并打印集合树 + 结果统计 |
+| `netparse parse <模板> <配置> --json` | 输出完整 JSON（stdout 是纯 JSON，可直接 `json.load`） |
+| `netparse lint <模板>` | 只跑模板体检 |
+| `netparse diff --all --jobs 12` | 与 incumbent 的 19 列三栏对比（需生产只读语料） |
+| `python tools/legacy/probe_coverage3.py <模板> <配置>` | **命令族覆盖率 + 缺口样例**（写完模板必跑） |
+| `python tools/legacy/probe_coverage2.py <模板> <配置>` | 全量覆盖率 + 零覆盖命令族清单 |
+| `python tools/legacy/probe_blind.py` | 引擎边界行为用例（end / inherit / 重名 / 正则 / 命名组） |
 | `python tests/run_regression.py` | 回归基线比对（`--update` 覆盖基线） |
+
+> `tools/` 下保留的是**兼容 shim**（旧命令仍可跑）+ `legacy/` 历史探针。
+> 正式用法是 `netparse` 子命令；库用法见 `README.md`。
 
 回归基线：`tests/fixtures/sample-vrp.txt` + `sample-vrp.expected.json`
 （**嵌套形状**：子集合的元素嵌在父元素里）。

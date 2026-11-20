@@ -22,10 +22,10 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "tools"))
+sys.path.insert(0, os.path.join(ROOT, "src"))
 
-import probe_stack as P      # noqa: E402
-from masking import MASK_DEFAULT, is_secret_shape  # noqa: E402
+from netparse import engine as P      # noqa: E402
+from netparse.masking import MASK_DEFAULT, is_secret_shape  # noqa: E402
 
 TEMPLATE = os.path.join(ROOT, "templates", "huawei-vrp.cmdb")
 FIXTURES = [

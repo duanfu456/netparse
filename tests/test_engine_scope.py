@@ -14,10 +14,9 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-import probe_stack as engine  # noqa: E402
+from netparse import engine  # noqa: E402
 
 FAILURES = []
 PASSED = 0

@@ -30,9 +30,11 @@ import time
 from collections import Counter, OrderedDict, defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
+# HERE 现在是 tools/legacy/，仓库根要再上两层（原来在 tools/ 时只上一层）
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, os.path.join(ROOT, "src"))
 sys.path.insert(0, HERE)
-import probe_stack as P  # noqa: E402
+from netparse import engine as P  # noqa: E402
 
 RAW_ROOT = r"E:\配置文件\BRAS&SR\原始配置"
 PARSE_ROOT = r"E:\配置文件\解析"

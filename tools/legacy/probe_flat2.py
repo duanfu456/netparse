@@ -14,8 +14,8 @@ import os
 import sys
 from collections import Counter, OrderedDict
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import probe_stack as P  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src"))
+from netparse import engine as P  # noqa: E402
 
 
 def flatten(res, colls, parent_key_of=None):
