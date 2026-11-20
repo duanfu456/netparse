@@ -269,8 +269,15 @@ Statistic   type(dict) desc(流量统计)
 **三条硬约束**：
 
 1. **同一条规则里不能混用** `${X}` 与 `(?P<X>...)` —— 会抛 `redefinition of group name` 崩溃
-2. **裸命名组不还原点号路径** —— `(?P<Stat__Mode>\S+)` 写成平铺列 `"Stat__Mode"`，
-   不是 `{"Stat": {"Mode": ...}}`。写嵌套字段**必须用** `${Stat.Mode}`
+2. **裸命名组只有写成"带点"的形式才会还原嵌套路径**（2026-11 修正）：
+   - ✅ `(?P<Statistic.Mode>\S+)` → 引擎把组名展平成 `Statistic__Mode` 交给 `re`，
+     写入时按 `group_paths` 还原回 `{"Statistic": {"Mode": ...}}`
+   - ❌ `(?P<Statistic__Mode>\S+)` —— **不带点**，引擎不会登记它，
+     输出里就是一个平铺列 `"Statistic__Mode"`（实测让 `QosCar__Cbs` / `Isis__HelloInterval`
+     这类内部展平名直接泄漏到 JSON）
+   
+   结论：**手写命名组要写点，不要自己写双下划线。** `__` 是引擎内部的展平实现细节，
+   不是模板语法。
 3. 裸命名组的组名**不在字段表里也不会报错**（会静默产生一个未声明的列）——
    在 lint 补上这条检查之前，务必人工核对组名
 
@@ -953,6 +960,13 @@ python tools/legacy/probe_coverage3.py templates/huawei-vrp.cmdb <配置文件>
 | `python tools/legacy/probe_coverage2.py <模板> <配置>` | 全量覆盖率 + 零覆盖命令族清单 |
 | `python tools/legacy/probe_blind.py` | 引擎边界行为用例（end / inherit / 重名 / 正则 / 命名组） |
 | `python tests/run_regression.py` | 回归基线比对（`--update` 覆盖基线） |
+| `python tools/_probe_gap_split.py` | 接口块内缺口 A/B/C 分解（未建模 / 写法 / 命中） |
+| `python tools/_probe_conserve.py` | **块数守恒**逐台核对（正确性最关键指标） |
+| `python tools/_probe_baseline.py` | 覆盖率与字段填充率基线固化 / 对比（`--save` / `--compare`） |
+
+> ⚠️ **`--json` 模式下 lint 报告走 stderr**，stdout 保持纯 JSON（才能直接 `json.load`）。
+> 想同时看 lint 结果：`netparse parse … --json > out.json 2> lint.txt`，
+> 或 `… 2>&1 | tee`。非 `--json` 模式两者都走 stdout，行为不变。
 
 > `tools/` 下保留的是**兼容 shim**（旧命令仍可跑）+ `legacy/` 历史探针。
 > 正式用法是 `netparse` 子命令；库用法见 `README.md`。

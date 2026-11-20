@@ -518,7 +518,7 @@
 
 ## 3. 文档与结论回写（0.5 人日）
 
-- [ ] **3.1 `docs/TEMPLATE-GUIDE.md` 补 `type(secret)` 语法**
+- [x] **3.1 `docs/TEMPLATE-GUIDE.md` 补 `type(secret)` 语法**
   - 改动：3.2 字段声明表加 `type(secret)` 行；新增一小节讲脱敏（何时用、掩码串可配、Key 不兼容、inherit 禁止、**一个字段只能声明一种 type**）
   - ⚠️ **同时要更新命令表**：说明 **`--json` 时 lint 报告走 stderr**（D14）—— 想同时看 lint 要写 `> out.json 2> lint.txt`（或 `2>&1 | tee`）；非 `--json` 模式不变
   - ⚠️ **同时要注明**「嵌套字段用**点号路径**（`Statistic.Mode`）而不是组名（`Statistic__Mode`）」—— 后者在 `-> 集合名{}` 目标里会被静默丢弃（实现期发现，能力 A 的 `_apply` members 分支以路径为键）
@@ -613,3 +613,46 @@
 适配器的映射表是 24+ 条手工映射，**写错一条就污染整列的结论**（例如把 `Description` 映射到 `interfaces[].vpn.name`，第 5 列会显示 0% 而第 12 列显示一个看似合理的值 —— 极难发现）。
 
 **排查方法**：报告里必须有"两侧都有值但不一致"的计数（`diff_samples` 的存在性与数量）。若某列填充率异常低 **且** 差异样本为空 → **映射很可能写错了**，而不是 netparse 抓不到。**先排除映射错误，再下"能力差距"的结论。**
+
+---
+
+## 5. 模板设计层审查（2026-11，追加）
+
+对 318 台真实配置做了一轮设计层审查，结论落盘在 `docs/TEMPLATE-GUIDE.md` 第 8 节。
+commit `ecc65af`。
+
+- [x] **5.1 确立华为层级模型**
+  - 验证：纯缩进模型切出 441,180 块 / **0 异常**；缩进宽度只有 0/1/2、无 Tab、318 台 100% 一致
+  - 结论：层级**完全**由缩进表达，`#` 自带缩进（`bas` 后紧跟缩进 1 的 `#` 占 95,887/96,006）
+
+- [x] **5.2 引擎新增 `indent(n)` / `end_indent(n)`（均 opt-in）**
+  - `indent(n)`：规则级缩进锚定，同一条命令在不同层能分进不同集合
+  - `end_indent(n)`：裸 `#` 按缩进只关对应层
+  - 验证：不写这两个声明 = 旧行为，改引擎后重跑基线 30.8% → 30.8%（+0.0），零回归
+
+- [x] **5.3 修掉 5 个引擎 bug**
+  - `_apply` 对 start 行也校验缩进 → `from_start=True`
+  - `commit()` 折叠用了父集合的 `coll.type` → 改 `cdef.type`
+  - `-> A,B` 简写时 `None` 覆盖真值 → 回查捕获组
+  - `apply_writes` 嵌套 list 被反复覆写 → `_list_prefix` / `_append_to_list_path`
+  - `parse_template` 空行无条件重置 mode → 规则被当集合声明吞掉
+  - 详见 `docs/TEMPLATE-GUIDE.md` 8.3
+
+- [x] **5.4 模板重写（253 → 约 500 行）**
+  - 接口块内覆盖率 **30.8% → 100.0%**；ACL 规则 2,675/14,723 → **14,723/14,723**
+  - 新增 `Bas` 子集合承载 bas 视图（10,462 接口）；`VpnInstances` 拆 v4/v6 两族
+  - `Bgp.Groups` 提为 `BgpGroups` 子集合；`AclRules` 6 条穷举 → 1 条可选组
+  - 去掉 6 处会造成造假的 `default`（`mpls` 全库仅 643 次，`default(true)` 让 21,427 条全 true）
+
+- [x] **5.5 验证**
+  - lint 0 错误 / 0 警告；325 项断言全绿；端到端回归 2 fixture / 14 记录一致
+  - 块数守恒：6 类 × 20 台逐台核对**全部一致**（`tools/_probe_conserve.py`）
+  - 回归基线 `*.expected.json` 已按新结构更新，30 处差异逐条判定记录在
+    `docs/TEMPLATE-GUIDE.md` 8.3 —— **无真实数据丢失**（旧基线里有假记录：
+    `BgpPeers` 混入了 `{Peer:"RR-L2"}` 这种把组名当 IP 的条目）
+
+- [ ] **5.6 剩余缺口（不影响当前结论）**
+  - A 类未建模仅余 4 行（`qos-profile` 出现在 `authentication-scheme` 下，
+    缩进 2、不属于接口块，是测量脚本口径问题）
+  - `Ipv6Family` 现网 20 条已全部分离验证；`isis ipv6 cost` 已覆盖
+  - 122 种顶层块中仍有约 110 种未建模（本轮只做接口相关，其余按需推进）
