@@ -412,7 +412,9 @@ Bgp type(list) start(^bgp\s+) end(^#$) end_indent(0) desc(BGP)
 [value]
 AsNumber       type(int) reg(\d+) desc(AS 号) option(Key)
 RouterId       type(str) reg(\S+) desc(Router ID)
-Private4ByteAs type(bool) default(true) desc(私有 4 字节 AS)
+# 现网 20 个 BGP 块：disable 17 次 / enable 3 次，两种形态都有 →
+# default(true) 不成立，去掉；没配 = 未声明，不臆造
+Private4ByteAs type(bool) desc(私有 4 字节 AS)
 Groups         type(list) desc(邻居组)
   Name        type(str) reg(\S+) desc(组名)
   Type        type(str) reg(internal|external) desc(类型)
@@ -427,6 +429,7 @@ Networks       type(list) desc(宣告网段)
 ^bgp\s+${AsNumber}(?:\s+.*)?\s*$
 ^ {1}router-id\s+${RouterId}(?:\s+.*)?\s*$
 ^ {1}private-4-byte-as disable\s*$  -> Private4ByteAs=false
+^ {1}private-4-byte-as enable\s*$   -> Private4ByteAs=true
 ^ {2}network\s+(?P<Prefix>\S+)\s+(?P<Mask>\S+)(?:\s+.*)?\s*$
        -> Networks{Prefix,Mask}
 
