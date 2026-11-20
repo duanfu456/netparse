@@ -199,7 +199,7 @@
 
 ### 2.1 适配器（1.2 人日）
 
-- [ ] **2.1.1 定义映射表 `MAPPING_SPEC`**
+- [x] **2.1.1 定义映射表 `MAPPING_SPEC`**
   - 改动：新建 `src/netparse/adapters/incumbent.py`，定义映射表，每个条目含 `path`（incumbent 目标路径）、`source`（netparse 来源路径或 `None`）、`root_cause_if_empty`、`note`
   - **必须覆盖**的映射（依据实测）：
 
@@ -236,14 +236,14 @@
   - ⚠️⚠️ **映射表不得添加 peer / Password / Bgp 相关行**（2026-11-19 复核修正）：**incumbent 产物里根本没有 peer/BGP 段** —— 其顶层键**恒为 5 个**（`device_name`/`device_ip`/`interfaces`/`route-static`/`qos-profile`，401 个产物抽样一致）；实测一个配置原文含 58 行 `password cipher` 的设备，产物里 `%^%#`/`password`/`peer` 命中**均为 False**。⇒ 加了会写出**恒为空的映射 = 假缺口**。`Bgp`/`BgpPeers` 应作为 **netparse 独有的资产类别**出现在段二的 `only_netparse` 里，不是映射行
   - 验证：映射表条目数 ≥ **26**；每条都有 `path` 与 `root_cause_if_empty`；`grep -c "source" src/netparse/adapters/incumbent.py` > 0；**`grep -iE "peer|password|bgp" src/netparse/adapters/incumbent.py` 的 MAPPING_SPEC 段无命中**（docstring 提到不算）
 
-- [ ] **2.1.2 实现 `to_incumbent_shape()`**
+- [x] **2.1.2 实现 `to_incumbent_shape()`**
   - 改动：同文件。**纯结构映射**（design.md D9）：键改名 + 结构重排 + 值搬运；**禁止**推导/默认值/合成
   - ⚠️ `route-static` 在 incumbent 侧是 **dict**（`{"IPV4":[...], "IPV6":[...]}`），不是 list —— 必须重排成 dict
   - ⚠️ `IP` 是 dict（`{"IPV4":[...], "IPV6":[...]}`）；**接口无 IP 时不产生 `IP` 键**
   - ⚠️ IPv6 的键名是 `ip`、前缀键是 `mask`（incumbent 实测：`{"ip": "...", "mask": "127"}`；早期文档误写为 `addr`，已按真实产物更正）
   - 验证：2.1.3 的样例回归全绿
 
-- [ ] **2.1.3 映射表最小样例回归**
+- [x] **2.1.3 映射表最小样例回归**
   - 改动：新建 `tests/test_adapter.py` —— 每条映射一个最小样例（netparse 形状输入 → 期望 incumbent 形状输出）；**缺样例则失败**
   - 验证：`python tests/test_adapter.py` 退出码 0；人为改错一条映射的 source → 该样例失败
 
@@ -338,37 +338,71 @@
          —— 现网存在"vpn-instance + 出接口、**无下一跳**"形态（抽样 337 文件里 4 条）；无前瞻时 plain 规则会错位捕获 `Prefix="vpn-instance"`（静默错值，比丢数据更糟）。
       ⇒ **design.md 的"4 条规则 + 判别式"骨架、顺序、坑 1/2/3 全部保留**，只是把两处与现网不符的正则形态修正了。建议架构师回填 design.md。
 
+### 2.2c 引擎：块分隔符 `#` / `!` 参与 end 出栈（全量复验时发现，0.5 人日）
+
+- [x] **2.2c.1 `probe_stack.py` 裸 `#` / `!` 不再当注释跳过**
+  - 问题：原 `if st.startswith("#") and len(st) <= 2: continue` 早于 end 匹配，
+    导致模板声明的 `end(^#$)` **永远不生效**，层级一路挂着不收
+  - 实测后果：`Acls` 从 `acl number 2000` 挂到几千行后的 `interface NULL0`，
+    中间的 ` description SSH-Acl-Control` 被当成**接口**描述 →
+    **103 个文件的 NULL0 凭空多出 ACL 描述**
+  - 修复：裸 `#` / `!` 参与 end 匹配，从最深一层起连同其上子层一起收起；
+    未声明 `end` 的层不被关闭（向后兼容）；非裸 `#` 长行仍是注释
+  - 验证：`tests/test_engine_scope.py` 9 项通过
+
+- [x] **2.2c.2 模板补 `end(^#$)`**
+  - 改动：`Interfaces` / `VpnInstances` / `Acls` / `AclRules` 四个集合
+  - ⚠️ 只改模板无效（代码不认 `#`），只改代码也无效（模板没声明 end），**两层必须同时改**
+  - 验证：全量 8440 文件，`接口描述` 多出 103 → **0**；接口数 6278430 **不变**；
+    8440/8440 文件接口数一致
+
+- [x] **2.2c.3 诊断逻辑两处误判**
+  - ① `template_declaration` 用 `qualified in required` 子串包含：
+    `RouteStatics.NextHop` 是 `RouteStatics.NextHopIface` 的子串 →
+    只声明 `NextHop` 的**修前**模板被判成「已声明 NextHopIface」→
+    真实的记录丢失被错判成「字段已捕获、缺口不在解析层」。改为精确匹配
+  - ② `evidence_for` 对每列每文件无条件采证：
+    `VPN实例` 里两侧都正常捕获的 `ip binding vpn-instance __dcn_vpn__`
+    被当成缺口证据，归不进任何根因，把整列拖成 `INSUFFICIENT`。
+    改为只在 `part[side].filled < incumbent.filled` 时采集
+  - 验证：`tests/test_diff_incumbent.py` 72 项；40 文件抽样**零 INSUFFICIENT**
+
+- [ ] **2.2c.4 Nokia 模板同类隐患（待办，需真实样本）**
+  - 现状：`templates/nokia-sros.cmdb` 注释写明「用 `exit` 关键字退出块」，但**未声明 `end`**
+  - 未修原因：本仓库无 Nokia 回归样本，无样本验证的改动风险高于收益
+  - 修法：三个集合补 `end(^\s*exit\s*$)`，或按 Nokia 实际配置确认块结束符后再定
+
 ### 2.3 diff 工具骨架（0.8 人日）
 
-- [ ] **2.3.1 CLI 与参数解析**
+- [x] **2.3.1 CLI 与参数解析**
   - 改动：新建 `tools/diff_incumbent.py`，参数：`--all` / `--sample N` / `--month YYYYMM` / `--out-dir` / `--json` / `--markdown` / `--dry-run` / **`--template <path>`**（指定用哪份模板跑；缺省用 `templates/huawei-vrp.cmdb`）
   - ⚠️ `--template` 是**跑两遍**的基础（修前用 `baseline-template.cmdb`，修后用当前模板），报告里的 `netparse_before_fix` / `netparse_after_fix` 两栏由它产出
   - 验证：`python tools/diff_incumbent.py --help` 退出码 0 并列出全部参数（含 `--template`）
 
-- [ ] **2.3.2 只读 import `build_excel`**
+- [x] **2.3.2 只读 import `build_excel`**
   - 改动：`sys.path.insert` 到 `E:\配置文件\配置解析\华为`，`import build_excel`；**只调用** `build_excel.build_rows(json_path)` 与 `build_excel.COLUMNS`
   - ⚠️ **不得**修改/复制 `build_excel.py`；**不得**调用 `write_month` / `main`
   - 验证：diff 跑完后 `readonly_guard.py --verify` 对 `配置解析\华为\` 报 OK
 
-- [ ] **2.3.3 路径反推与完整性检查**
+- [x] **2.3.3 路径反推与完整性检查**
   - 改动：按 `解析后/<月>/华为/<stem>.json` → `原始配置/<月>/华为/<stem>`（再试 `<stem>.txt`）
   - 验证：`python tools/diff_incumbent.py --dry-run` 输出「找到对应原始配置 8440 / 8440」且缺失清单为空
 
 ### 2.4 diff 主流程（1.2 人日）
 
-- [ ] **2.4.1 逐文件两侧行生成与按名对齐**
+- [x] **2.4.1 逐文件两侧行生成与按名对齐**
   - 改动：netparse 解析 → 适配器 → 写临时 JSON（**文件名保留原 `<stem>`**）→ `build_rows` → 行；incumbent JSON → `build_rows` → 行；**按接口名（小写）join**
   - ⚠️ **临时文件名必须保留时间戳**，否则 `extract_time` 提取不到 → "采集时间"列全线不同（design.md R5）
   - ⚠️ 两侧接口数可能不同 → **按名 join，不按索引**
   - ⚠️ 重名接口 → **报错并跳过该文件**（计入 `files_failed`）
   - 验证：对同一个样本文件，断言 netparse 与 incumbent 的接口数均为 **1044**（实测基线）；断言两侧行能按名配对
 
-- [ ] **2.4.2 19 列填充率统计（段一 · 台账口径 · 逐文件粒度）**
+- [x] **2.4.2 19 列填充率统计（段一 · 台账口径 · 逐文件粒度）**
   - 改动：逐文件逐列统计 `{filled, total, rate}`；列名与顺序取自 `build_excel.COLUMNS`
   - ⚠️ **限速列（第 6/7 列）的值只能来自 `build_rows`**（顶层定义 + 接口级引用 + 接口级直给 三层 join 取小）—— diff 工具**不得**自算
   - 验证：报告 JSON 的 `column_fill_rate` 有 19 个键；`接口入流限速(M)` 的键名与 `COLUMNS` 逐字相同；**diff 工具源码里 grep 不到任何自制的限速计算逻辑**
 
-- [ ] **2.4.2b ⭐ 全局汇总口径（段一 · 台账口径 · 全局粒度）—— 必须项，不是可选项**
+- [x] **2.4.2b ⭐ 全局汇总口径（段一 · 台账口径 · 全局粒度）—— 必须项，不是可选项**
   - 改动：把 8440 个文件的**所有记录汇总**（不按文件切分），按列统计**值条数**（非空值的个数），产出 `global_column_value_count`
   - ⚠️ **为什么必须有**（实测）：第 10 列在**单文件粒度上没有分辨力** —— `SNANK-MC-CMNET-BAS03-SCEC-X16A`（1558 接口）**incumbent 自己就是 0/1558 = 0.0%**（该文件 79 条路由全无显式出接口），而 netparse 丢掉的 72 条分散在 60 个文件里 ⇒ 逐文件口径显示"两侧都是 0%，无差距"，**把 96% 的丢失完全掩盖掉**
   - **报告规则**：
@@ -382,27 +416,27 @@
     - **报告不会显示"该列无差距"**
     - ⚠️ 判定"带显式出接口"时 **MUST 排除 `NULL0`**
 
-- [ ] **2.4.2c 接口数一致性统计（识别层基准）**
+- [x] **2.4.2c 接口数一致性统计（识别层基准）**
   - 改动：逐文件比对两侧接口数，产出 `interface_count_parity: {files_matched, files_mismatched}`；mismatched 的文件列出仅一侧有的接口名
   - 验证：对 `SNANK-MC-CMNET-BAS03-SCEC-X16A_218.200.1.171.20250824063214` 断言两侧均为 **1558**；对 1044 接口的样本断言均为 **1044**
 
-- [ ] **2.4.3 差异样本采集**
+- [x] **2.4.3 差异样本采集**
   - 改动：每列若存在差异，取至少 1 条 `{device, interface, incumbent, netparse}`
   - 验证：至少有一列（预期"域名名称"）有非空样本；样本能回溯到原始配置的接口行
 
-- [ ] **2.4.4 根因自动分类**
+- [x] **2.4.4 根因自动分类**
   - 改动：用引擎的 `run(colls, lines, trace=...)`（`probe_stack.py:594/610`）按命令族统计命中数；结合 `MAPPING_SPEC` 的 `root_cause_if_empty` 自动判定 `模板未覆盖该命令` / `字段丢失` / `join缺失`
   - ⚠️ 命令族定义必须与 `probe_coverage3.py:25-34` 一致（骨架归一化 + 前 1~2 词），否则数字对不上
   - 验证：断言"域名名称"列的 `root_cause` 含 `模板未覆盖该命令`，且 `evidence` 里 `bas`/`access-type` 命令族的总行数 > 0、命中行数 = 0；断言"IPv4静态路由明细"列的 `root_cause` 含 **`整条记录丢失`** 且 evidence 指明"带显式出接口的路由整条没进记录"（不是只缺字段）；断言"接口入流限速(M)"列的 `root_cause` 含 `模板未覆盖该命令`（netparse 侧模板**完全没有** qos-profile 规则，三层全缺）
   - ⚠️ **判定"带显式出接口"时必须排除 `NULL0`**（`interface NULL0` 在 60/60 个文件里存在）—— 不排除会把分母从 76 污染到 930、丢失率从 94.7% 算成 5.6%
 
-- [ ] **2.4.5 ⭐ 双向字段级能力覆盖（段二 · 能力口径）**
+- [x] **2.4.5 ⭐ 双向字段级能力覆盖（段二 · 能力口径）**
   - 改动：在 `part2_capability` 里产出 `interface_level_fields: {matched, only_incumbent, only_netparse, coverage}` 与 `collection_level_fields`（`qos_profile_top` / `route_static`）；并写 `extra_value_note`
   - ⚠️ **字段名归一化**：incumbent 用 snake_case（`name`/`description`/`IP`/`vpn`/`QOS`/`VLAN`/`bas`/`multicast`/`qos-profile`/`traffic-policy`），netparse 用 PascalCase（`Name`/`Description`/`IpAddress`/`IpBindingVpn`/…）→ 比较前必须先按**语义别名表**归一化，别用大小写折叠
   - ⚠️ **必须双向**：只报缺口会系统性低估 netparse（netparse 多出的接口级字段 incumbent 一个都没有）
   - 验证：在 1558 接口的样本上断言 `matched` 恰为 **4**（name/description/IP/vpn）、`only_incumbent` 恰为 **6**（QOS/VLAN/bas/multicast/qos-profile/traffic-policy）、`only_netparse` **不少于 10**；断言 `collection_level_fields.qos_profile_top.netparse == null`
 
-- [ ] **2.4.5b ⭐ 资产类别覆盖对比（段二 · 谁覆盖的资产种类多）**
+- [x] **2.4.5b ⭐ 资产类别覆盖对比（段二 · 谁覆盖的资产种类多）**
   - 改动：在 `part2_capability.asset_categories` 里产出两侧各自的资产类别清单 + **三分类** + 真正独有类别及其实例数
   - **实测基线（★三分类，不是简单二分）**：
     ```
@@ -419,14 +453,14 @@
 
 ### 2.5 报告产出（0.6 人日）
 
-- [ ] **2.5.1 JSON 报告**
+- [x] **2.5.1 JSON 报告**
   - 改动：按 design.md `## Interfaces` 节的**两段式**结构写 `--json` 输出（顶层 `part1_ledger` / `part2_capability` / `workload_estimate` / `readonly_check`）；**流式写**（不把 8440 文件的全量数据攒在内存里）
   - ⚠️ `part1_ledger` 里必须有**两个粒度**：`column_fill_rate`（逐文件）与 `global_column_value_count`（全局值条数）；受模板改动影响的列还要有 `incumbent` / `netparse_before_fix` / `netparse_after_fix` 三栏
   - ⚠️ **`meta` 段要带脱敏统计 `l1_hits` / `l2_hits`** —— `masking.STATS.as_dict()` 提供。**`l2_hits` 是 D4 说的「模板标注完整度」度量**：L2 命中数远大于 L1 ⇒ 模板漏标 secret。实测真实文件 **L1=3/4/4/9、L2=0** ⇒ 当前模板对已抓到的凭据字段标注完整、无漏标
   - ⚠️ **`STATS` 是 per-run 的**：`run()` 开头会 `STATS.reset()` ⇒ **diff 工具必须自己累加**每个文件跑完后的 `STATS.as_dict()`，不能只在最后读一次
   - 验证：`python tools/diff_incumbent.py --all --json <path>` 后 `python -c "import json;d=json.load(open(...));print(d['meta']);print(d['part1_ledger'].keys());print(d['part2_capability'].keys())"` 输出 `files_total=8440, files_processed=8440, files_failed=0` 且两段的键都在；`global_column_value_count` 有 19 个键；`meta` 含 `l1_hits` / `l2_hits`
 
-- [ ] **2.5.2 Markdown 报告 + 工作量估算**
+- [x] **2.5.2 Markdown 报告 + 工作量估算**
   - 改动：人可读版；**两段都要有**——段一：19 列填充率表（**逐文件 + 全局值条数两栏**）+ 根因表 + 差异样本 + 接口数一致性 + **修前/修后对照**；段二：双向字段覆盖（缺什么 / 多什么）+ 集合级结构差异 + **资产类别三分类对比** + `extra_value_note`；外加 `workload_estimate`（逐列 `column`/`gap`/`change`/`effort_days` + 总区间 + 与 FINAL-plan 8.4 的 `68-104` 对照）
   - ⚠️ **标红规则**：全局值条数两侧差 > 20% 的列，在 Markdown 表格里**必须视觉标红**（如加 `🔴` 与加粗）
   - ⚠️ **无分辨力的列**要加注「本列逐文件差异不具分辨力，请以全局值条数为准」
@@ -439,13 +473,13 @@
     - **报告里有 `repro` 段**，且含 `command` / `command_baseline` / `corpus_snapshots` / `git_commit_tool` / `git_commit_template_current` / `git_commit_template_baseline` 六个字段，**均非空**
     - **资产类别数字与规格基线一致**：netparse `12/3/2/7`、incumbent `4/3/0/1`（这是最难事后发现的一类错位 —— 两边都自洽、只是对不上）
 
-- [ ] **2.5.3 明文自检 + 临时文件清理 + 只读自检**
+- [x] **2.5.3 明文自检 + 临时文件清理 + 只读自检**
   - 改动：报告写盘后扫描密文形态，命中 → 删除报告 + 非 0 退出；finally 块清理临时 JSON；调用 `readonly_guard.py --verify`
   - 验证：① `grep -c "%\^%#" <report>` → 0；② 临时目录运行后为空；③ 输出含 `READ-ONLY OK`
 
 ### 2.6 抽样冒烟与全量（0.4 人日）
 
-- [ ] **2.6.1 `--sample 20` 冒烟**
+- [x] **2.6.1 `--sample 20` 冒烟**
   - 改动：无
   - 验证：产出报告且结构与全量一致；人工核对 3 个文件的差异样本合理
 

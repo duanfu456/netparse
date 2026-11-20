@@ -335,29 +335,42 @@ VpnInstance type(str) reg(\S+) desc(所属 VPN 实例) option(Key)
 
 ### 4.1 接口台账 19 列 —— 逐列标注 netparse 覆盖状态
 
-| # | 列 | 来源命令 | netparse | 缺口说明 |
-|---|---|---|---|---|
-| 1 | 设备名称 | `sysname` | ✅ | `Device.SysName` |
-| 2 | 管理IP | `router id` | ✅ | `Device.RouterId` |
-| 3 | 采集时间 | 文件名时间戳 | ⚠️ | 需外部注入 |
-| 4 | 接口 | `interfaces[].name` | ✅ | `Interfaces.Name` |
-| 5 | 接口描述 | `interfaces[].description` | ✅ | `Interfaces.Description` |
-| 6 | 接口入流限速(M) | `qos-profile` / `qos car` | ❌ | `qos car` 94 行 **0% 覆盖**；且**需 join**（qos-profile 引用） |
-| 7 | 接口出流限速(M) | 同上 | ❌ | 同上 |
-| 8 | 端口IPv4 | `ip address` | ✅ | `Interfaces.IpAddress`（掩码→CIDR 在资产层） |
-| 9 | 端口IPv6 | `ipv6 address` | ✅ | 同上 |
-| 10 | IPv4静态路由明细 | `route-static` | ✅ | 需**按接口反查**（join） |
-| 11 | IPv6静态路由明细 | `ipv6 route-static` | ❌ | 模板未覆盖 |
-| 12 | VPN实例 | `ip binding vpn-instance` | ✅ | `Interfaces.IpBindingVpn` |
-| 13 | 域名名称 | `bas` 块 | ❌ | `bas` 514 行 **0% 覆盖** |
-| 14 | 组播类型 | `pim sm` | ❌ | 141 行 **0% 覆盖** |
-| 15 | 入方向流量策略 | `traffic-policy X inbound` | ❌ | **0% 覆盖** |
-| 16 | 出方向流量策略 | `traffic-policy X outbound` | ❌ | **0% 覆盖** |
-| 17 | PVLAN | `user-vlan ... qinq ...` | ❌ | 1370 行 **11% 覆盖** |
-| 18 | CVLAN | 同上 | ❌ | 同上 |
-| 19 | VLAN封装类型 | `vlan-type dot1q` | ❌ | 299 行 **0% 覆盖** |
+> **口径**：下表数值来自 `tools/diff_incumbent.py` 的**全量语料台账口径**
+> （8440 文件 / 6278430 接口行，19 列值条数），与按命令族行数的覆盖率口径**不可混算**。
 
-**netparse 当前直接产出 9 / 19 列。** 缺的 10 列恰好是**业务价值最高**的那批（限速、流量策略、组播、PVLAN/CVLAN、域名、VLAN 封装）。
+| # | 列 | incumbent | netparse 修后 | 差值 | 证据化根因 |
+|---|---:|---:|---:|---|
+| 1 | 设备名称 | 6278430 | 6278430 | 0 | — |
+| 2 | 管理IP | 6278430 | 6278430 | 0 | — |
+| 3 | 采集时间 | 3483513 | 3483513 | 0 | 需外部注入（取文件名末尾时间戳） |
+| 4 | 接口 | 6278430 | 6278430 | 0 | — |
+| 5 | 接口描述 | 4677947 | 4677947 | 0 | 修前曾多出 103（ACL 泄漏，已修，见 4.4） |
+| 6 | 接口入流限速(M) | 647169 | 0 | 100% | 模板未覆盖该命令 |
+| 7 | 接口出流限速(M) | 644210 | 0 | 100% | 模板未覆盖该命令 |
+| 8 | 端口IPv4 | 1937580 | 1937580 | 0 | — |
+| 9 | 端口IPv6 | 144582 | 733039 | +407% | **语义不同**（netparse 多，非缺口） |
+| 10 | IPv4静态路由明细 | 8963 | 8963 | 0 | 修前丢失 18780 条，已修 |
+| 11 | IPv6静态路由明细 | 18770 | 0 | 100% | 模板未覆盖该命令 |
+| 12 | VPN实例 | 1510168 | 664708 | 56% | 两种形态只覆盖 `ip binding`，BAS 内 `vpn-instance` 未覆盖 |
+| 13 | 域名名称 | 2549852 | 0 | 100% | 模板未覆盖该命令 |
+| 14 | 组播类型 | 728415 | 0 | 100% | 模板未覆盖该命令 |
+| 15 | 入方向流量策略 | 752869 | 0 | 100% | 模板未覆盖该命令 |
+| 16 | 出方向流量策略 | 592843 | 0 | 100% | 模板未覆盖该命令 |
+| 17 | PVLAN | 1340385 | 0 | 100% | 模板未覆盖该命令（真机无独立 `qinq` 行） |
+| 18 | CVLAN | 4598216 | 0 | 100% | 模板未覆盖该命令（`dot1q` 无对应规则） |
+| 19 | VLAN封装类型 | 4598216 | 0 | 100% | 模板未覆盖该命令 |
+
+**netparse 完整对齐 8 / 19 列，另有 2 列口径不同（端口IPv6、VPN实例），1 列需外部注入（采集时间）。**
+缺的 9 列是**业务价值最高**的那批（限速、流量策略、组播、PVLAN/CVLAN、域名、VLAN 封装、IPv6 静态路由）。
+
+**⚠️ 四个不能写错的判断**（都有真实行证据，全量口径）：
+- **端口IPv6 不是缺口**：netparse 多出（733039 vs 144582），属捕获范围/入表口径差异。
+  把它当缺口会虚增一列的工作量。
+- **VPN实例不能一句话结论**：必须写「已支持 `ip binding vpn-instance`，未覆盖 BAS 块内 `vpn-instance`」。
+- **PVLAN 不能按独立 `qinq` 行写规则**：真实形态是 `user-vlan 1000 1999 qinq 2000` 一行搞定。
+- **接口描述曾多 103 条不是语义差异，是引擎 bug**：ACL 的 `description` 泄漏进了 NULL0 接口，
+  见 4.4；修后已归零。
+
 
 ### 4.2 端口状态 5 列
 
@@ -530,7 +543,7 @@ NokiaAddresses 94 / 103、NokiaPorts 43 / 598（`port` 大部分不在 interface
 | 类型转换（int/float/bool）+ `default(<值>)` 填充 | ✓ |
 | `type(list)` 字段重复写入自动成数组 | ✓ |
 | `inherit=`（取"上次匹配到的值"） | ✓ **但从未被真实模板使用过** |
-| `end` 退出机制 | ✓ **但从未被真实模板使用过** |
+| `end` 退出机制 | ✓ **已用于华为模板**：`Interfaces`/`VpnInstances`/`Acls`/`AclRules` 声明 `end(^#$)`（见 6.3a） |
 | 命令覆盖统计（引擎内 `trace` 埋点） | ✓ **但目前只用于统计，未产品化** |
 | lint（字段引用、目标字段、Key 位置、Required 可达性） | ✓ 部分 |
 | 回归基线（`tests/run_regression.py`） | ✓ 但只覆盖 7 集合 / 11 条记录 |
@@ -554,7 +567,49 @@ NokiaAddresses 94 / 103、NokiaPorts 43 / 598（`port` 大部分不在 interface
 | **多设备并发** | — | **不构成问题**，同上 |
 | `desc` / `keys="zh"` 双键输出 | 低 | 当前交付物是 xlsx |
 
-### 6.3 安全基线（最高优先级）
+### 6.3a 块分隔符 `#` / `!` 参与 end 出栈（能力 B 全量复验时发现并修复）
+
+**这是两个引擎级 bug，都来自「`#` 被当注释跳过」。** 全量 diff（8440 文件）暴露。
+
+**bug 1 · `#` 早于 end 匹配被 continue 掉**
+
+`probe_stack.py` 原逻辑：
+
+```python
+if st.startswith("#") and len(st) <= 2:
+    continue      # ← 在 start/end 匹配之前就跳过
+```
+
+后果：模板声明的 `end(^#$)` **永远不生效**。`Acls` 从 `acl number 2000` 起
+一路挂到几千行后的 `interface NULL0`，中间的 ` description SSH-Acl-Control`
+被当成**接口**描述 —— **103 个文件的 NULL0 接口凭空多出 ACL 描述**。
+
+修复（两层必须同时改，只改一层无效）：
+
+| 层 | 改动 |
+|---|---|
+| 引擎 | 裸 `#` / `!`（长度 ≤ 2）参与 end 匹配，从最深一层起连同其上子层一起收起；未声明 `end` 的层不被关闭（向后兼容）；非裸 `#` 长行仍是注释 |
+| 模板 | `Interfaces` / `VpnInstances` / `Acls` / `AclRules` 补 `end(^#$)` |
+
+**bug 2 · 诊断器的两处误判（`tools/diff_incumbent.py`）**
+
+| 误判 | 原因 | 后果 | 修法 |
+|---|---|---|---|
+| 字段声明判定 | `qualified in required` 子串包含：`RouteStatics.NextHop` 是 `RouteStatics.NextHopIface` 的子串 | 只声明 `NextHop` 的**修前**模板被判「已声明 NextHopIface」→ 真实的记录丢失错判成「字段已捕获」 | 按分隔符切分后精确匹配，裸名补集合前缀 |
+| 缺口证据采集 | 对每列每文件无条件采证 | `VPN实例` 里两侧都正常捕获的 `ip binding vpn-instance __dcn_vpn__` 被当缺口证据，把整列拖成 `INSUFFICIENT` | 只在 `filled < incumbent.filled` 时采集 |
+
+**验证**：全量 8440 文件，`接口描述` 多出 103 → **0**；接口数 6278430 **不变**，
+8440/8440 文件接口数一致；19 列诊断**零 INSUFFICIENT**。
+回归：`tests/test_engine_scope.py`（9 项）、`tests/test_diff_incumbent.py`（72 项）。
+
+> **待办**：`templates/nokia-sros.cmdb` 注释写明「用 `exit` 退出块」但未声明 `end`，
+> 属同类隐患；本仓库无 Nokia 回归样本，留待有样本后补 `end(^\s*exit\s*$)` 并实测。
+
+### 6.3 安全基线（已实现，能力 A）
+
+**现状**：脱敏已在引擎层落地（`type(secret)` + 密文形态兜底），全量 8440 文件
+L1=68010 / L2=246 处被遮蔽，diff 报告零明文（`%^%#` 残留 0）。
+下面保留原始问题描述与要求，作为该能力的背景记录。
 
 **现状实测**：netparse 输出的 JSON 里含**完整可用的密文串**：
 
