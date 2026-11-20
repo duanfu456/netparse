@@ -217,6 +217,27 @@ def main():
     check("Markdown 不用 colspan", "colspan" not in md)
     check("列备注移到表外脚注", "**列备注：**" in md)
 
+    # 字段声明判定必须精确匹配：`RouteStatics.NextHop` 是 `RouteStatics.NextHopIface`
+    # 的子串，用 `in` 判断会把「只声明了 NextHop 的修前模板」误判成已声明 NextHopIface，
+    # 进而把真实的记录丢失错判成「字段已捕获、缺口不在解析层」。
+    check("字段名精确匹配，不做子串包含",
+          d.required_field_names("IPv4静态路由明细") == ["RouteStatics.NextHopIface"])
+    check("裸名补集合前缀", d.required_field_names("端口IPv4") ==
+          ["Interfaces.IpAddress.Address", "Interfaces.IpAddress.Mask"])
+    check("CVLAN 的 dot1q 补前缀", d.required_field_names("CVLAN") ==
+          ["Interfaces.VLAN.user-vlan", "Interfaces.VLAN.dot1q"])
+
+    class FakeColl:
+        def __init__(self, name, fields):
+            self.name, self.all_fields, self.rules, self.children = name, fields, [], []
+
+    only_nexthop = [FakeColl("RouteStatics", {"NextHop": None, "Mask": None})]
+    decl = d.template_declaration("t", only_nexthop, "IPv4静态路由明细")
+    check("只声明 NextHop 时不得判 NextHopIface 已声明", decl["target_declared"] is False)
+    with_iface = [FakeColl("RouteStatics", {"NextHop": None, "NextHopIface": None})]
+    check("声明了 NextHopIface 才判已声明",
+          d.template_declaration("t", with_iface, "IPv4静态路由明细")["target_declared"] is True)
+
     entries = [{"month": "m%d" % (i % 26), "stem": str(i)} for i in range(260)]
     selected = d.select_entries(entries, 20, sample_seed=7)
     check("抽样 20 覆盖 20 月", len({e["month"] for e in selected}) == 20)

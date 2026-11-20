@@ -331,22 +331,45 @@ def rules_tried(compiled, line, collection, limit=80):
 
 def relevant_collections(column):
     """从规格要求字段推导相关集合名（如 RouteStatics.NextHopIface → RouteStatics）。"""
-    required = REQUIRED_FIELDS.get(column, "")
     names = []
-    for chunk in re.split(r"[ /]", required):
-        name = chunk.strip().split(".")[0].split("（")[0]
-        if name and name not in names:
+    for name in required_field_names(column):
+        head = name.split(".")[0]
+        if head and head not in names:
+            names.append(head)
+    return names
+
+
+def required_field_names(column):
+    """把 REQUIRED_FIELDS 拆成精确的字段名集合。
+
+    必须按分隔符切并去括注，不能拿整串做子串包含 ——
+    `"RouteStatics.NextHop" in "RouteStatics.NextHopIface"` 为 True，
+    会把「只声明了 NextHop 的修前模板」误判成「已声明 NextHopIface」，
+    进而把真实的记录丢失错判成「字段已捕获、缺口不在解析层」。
+    """
+    names = []
+    for chunk in re.split(r"[/,]", REQUIRED_FIELDS.get(column, "")):
+        name = chunk.split("（")[0].strip()
+        if not name:
+            continue
+        # 逗号后的裸名（`Interfaces.IpAddress.Address,Mask`、`...user-vlan / dot1q`）
+        # 要补上前一个字段的集合前缀，否则会变成永不匹配的孤立名。
+        if "." not in name and names:
+            name = names[-1].rsplit(".", 1)[0] + "." + name
+        if name not in names:
             names.append(name)
     return names
 
 
 def template_declaration(path, colls, column):
     required = REQUIRED_FIELDS.get(column, "")
+    wanted_fields = set(required_field_names(column))
     declared = []
     for coll in colls:
         for field_path in coll.all_fields:
             qualified = coll.name + "." + field_path
-            if qualified in required or (column == "CVLAN" and qualified == "Interfaces.UserVlan"):
+            # 精确匹配，不用 in（见 required_field_names 里的说明）
+            if qualified in wanted_fields or (column == "CVLAN" and qualified == "Interfaces.UserVlan"):
                 declared.append(qualified)
     existing = {c.name: c for c in colls}
     wanted = relevant_collections(column)
@@ -906,6 +929,7 @@ def process_entry(entry, ctx):
     with open(entry["raw"], encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
     results, np_rows, traces, masks = [], [], [], collections.Counter()
+    collection_counts_per_template = []
     evidence_local = {side: collections.defaultdict(dict) for side in SIDES[1:]}
     surplus_local = {side: collections.defaultdict(dict) for side in SIDES[1:]}
     for template_index, colls in enumerate(ctx["templates"]):
@@ -926,19 +950,30 @@ def process_entry(entry, ctx):
         finally:
             os.unlink(path)
         counts_now = collection_record_counts(result)
+        # ⚠️ 这里只记录 trace 与记录数；缺口证据留到 compare_three 之后再采。
+        # 先采会犯「该文件这一列根本没有缺口，却仍挑一条正常命中行当缺口证据」的错，
+        # 这种证据必然归不进任何根因，只会把整列拖成 INSUFFICIENT
+        # （实测 VPN 实例：`ip binding vpn-instance __dcn_vpn__` 两侧都正常捕获）。
+        collection_counts_per_template.append(counts_now)
+    samples = {col: [] for col in COLUMNS}
+    part, both, only_inc, only_np, _ = compare_three(inc_rows, np_rows[0], np_rows[1], samples)
+    # 缺口证据只对「该文件这一列确实比 incumbent 少」的侧采集。
+    for side, template_index in zip(SIDES[1:], (0, 1)):
+        traces_i = traces[template_index]
+        counts_now = collection_counts_per_template[template_index]
         for col_index, col in enumerate(COLUMNS):
-            ev = evidence_for(entry, trace, ctx["declarations"][template_index][col_index],
+            if part[side]["filled"][col] >= part["incumbent"]["filled"][col]:
+                continue
+            ev = evidence_for(entry, traces_i, ctx["declarations"][template_index][col_index],
                               col, ctx["compiled"][template_index], counts_now)
             if col == "IPv4静态路由明细" and template_index == 0:
                 route_ev = route_record_loss_evidence(
-                    entry, incumbent, result, trace,
+                    entry, incumbent, results[template_index], traces_i,
                     ctx["declarations"][0][col_index], ctx["compiled"][0], counts_now)
                 if route_ev:
-                    add_evidence(evidence_local[SIDES[1]][col], route_ev)
+                    add_evidence(evidence_local[side][col], route_ev)
             if evidence_complete(ev):
-                add_evidence(evidence_local[SIDES[template_index + 1]][col], ev)
-    samples = {col: [] for col in COLUMNS}
-    part, both, only_inc, only_np, _ = compare_three(inc_rows, np_rows[0], np_rows[1], samples)
+                add_evidence(evidence_local[side][col], ev)
     # 正差异（netparse 多出）也要有真实行证据，不能只标红。
     for side, template_index in zip(SIDES[1:], (0, 1)):
         for col_index, col in enumerate(COLUMNS):
