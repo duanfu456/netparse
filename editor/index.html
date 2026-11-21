@@ -49,17 +49,12 @@
   #gutter .gline { height: 19.5px; line-height: 19.5px; padding-left: 4px; }
   .fold-btn { cursor: pointer; display: inline-block; width: 20px; text-align: center;
               color: var(--accent); font-weight: 700; }
-  .code-area { flex: 1; position: relative; min-width: 0; overflow: hidden; }
-  .code-area pre, .code-area textarea {
-    position: absolute; inset: 0; margin: 0; padding: 10px;
+  .code-area { flex: 1; display: flex; min-width: 0; min-height: 0; }
+  .code-area textarea {
+    flex: 1; margin: 0; padding: 10px; background: var(--panel); color: var(--fg);
     font: 13px/1.5 var(--mono); tab-size: 4; white-space: pre;
-    overflow: auto; border: 0; }
-  .code-area pre { pointer-events: none; color: var(--fg); background: transparent;
-                   z-index: 1; overflow: hidden; }
-  .code-area textarea { background: transparent; color: transparent;
-                        caret-color: var(--fg); outline: none; resize: none; z-index: 2; }
-  .code-area textarea::selection { background: var(--sel-bg); color: transparent; }
-  .folded-mark { color: var(--muted); background: rgba(127,127,127,.15); border-radius: 3px; padding: 0 4px; }
+    overflow: auto; border: 0; outline: none; resize: none; }
+  .code-area textarea::selection { background: var(--sel-bg); color: var(--fg); }
   /* 语法着色 */
   .tk-comment { color: var(--hl-comment); font-style: italic; }
   .tk-sec { color: var(--hl-sec); font-weight: 700; }
@@ -120,7 +115,7 @@
   <section id="pane-tpl"><h2>模板 — ${ 触发补全 · 点 ▸ 折叠集合 · 选中即试运行</h2>
     <div class="editor-wrap">
       <div id="gutter"></div>
-      <div class="code-area"><pre aria-hidden="true"><code id="hl"></code></pre><textarea id="tpl" spellcheck="false" autocomplete="off"></textarea></div>
+      <div class="code-area"><textarea id="tpl" spellcheck="false" autocomplete="off"></textarea></div>
     </div>
   </section>
   <section id="pane-lint">
@@ -190,66 +185,30 @@ function render() {
   // ---- 计算可见行 + gutter ----
   const ranges = foldRanges(ANA.kinds, SRC);
   const lines = SRC.split("\n");
-  const visible = [];            // [{text, srcLine}]
-  const gutterInfo = [];         // per visible line: {foldBtn?, foldState?}
-  const spans = {};              // srcLine -> 折叠提示 span
+  const visible = [];            // [{text, src, fold}]
+  const spans = {};              // srcLine -> 折叠区间
   for (const r of ranges) {
     if (FOLD[r.start]) spans[r.start] = {r, count: r.end - r.start};
   }
   let i = 0;
   while (i < lines.length) {
     if (spans[i]) {
-      const r = spans[i];
-      // 折叠：显示声明行 + 摘要标记
-      visible.push({text: lines[i], src: i, fold: "open"});
-      visible.push({text: `  ⋯ 已折叠 ${r.count - r.start - 0} 行（${r.coll}）⌃点击展开`, src: null, foldedFor: r});
-      i = r.end + 1;
+      visible.push({text: lines[i], src: i, fold: "open", foldedFor: spans[i].r});
+      i = spans[i].r.end + 1;
     } else {
-      const isColl = ANA.kinds[i] === "coll";
       const hasRange = ranges.some(x => x.start === i);
       visible.push({text: lines[i], src: i, fold: hasRange ? "close" : null});
       i++;
     }
   }
-  // ---- 渲染 gutter 与高亮层 ----
-  let g = "", h = "";
+  // ---- 渲染 gutter（折叠按钮）----
+  let g = "";
   for (const v of visible) {
     const ln = v.text;
-    // gutter
     if (v.fold === "close") g += `<div class="gline"><span class="fold-btn" data-fold="${v.src}">▸</span></div>`;
-    else if (v.fold === "open") g += `<div class="gline"><span class="fold-btn" data-unfold="${v.foldedFor.start}">▾</span></div>`;
+    else if (v.fold === "open") g += `<div class="gline"><span class="fold-btn" data-unfold="${v.foldedFor ? v.foldedFor.start : v.src}">▾</span></div>`;
     else g += `<div class="gline"></div>`;
-    // code
-    let hh = esc(ln);
-    if (v.foldedFor) {
-      h += `<span class="folded-mark" data-unfold="${v.foldedFor.start}" style="cursor:pointer">${hh}</span>\n`;
-      continue;
-    }
-    if (ln && !/^\s*#/.test(ln)) {
-      let x = hh;
-      if (/^\s*\[(value|rule)\]\s*$/.test(ln)) x = `<span class="tk-sec">${x}</span>`;
-      else {
-        let target = "";
-        const ti = x.indexOf("-&gt;");
-        if (ti >= 0) { target = `<span class="tk-target">${x.slice(ti)}</span>`; x = x.slice(0, ti); }
-        x = x.replace(/^([A-Z]\w*)(\s+)(type|start|end|indent|end_indent|desc)\b/g,
-            '<span class="tk-coll">$1</span>$2<span class="tk-kw">$3</span>');
-        x = x.replace(/(\s)([A-Z][\w.]*)(\s+)(type|start|end|desc|option|default|reg|inherit)\b/g,
-            '$1<span class="tk-field">$2</span>$3<span class="tk-kw">$4</span>');
-        x = x.replace(/\$\{([A-Za-z_][\w.]*)\}/g, '<span class="tk-field">${$1}</span>');
-        x = x.replace(/\b(option|Key|Required|secret|list|dict|str|int|float|bool|inherit=)\b/g,
-            '<span class="tk-kw">$1</span>');
-        x = x.replace(/\(([^()]{1,120}?)\)/g, '(<span class="tk-str">$1</span>)');
-        h += x + target + "\n";
-        // gutter 对齐
-        continue;
-      }
-      h += x + "\n";
-    } else {
-      h += (hh || "") + "\n";
-    }
   }
-  $("hl").innerHTML = h;
   $("gutter").innerHTML = g;
 }
 
@@ -264,11 +223,6 @@ $("gutter").addEventListener("click", e => {
   const f = e.target.dataset.fold, u = e.target.dataset.unfold;
   if (f !== undefined) foldAt(+f);
   else if (u !== undefined) unfold(+u);
-});
-// 折叠摘要点击展开
-$("hl").addEventListener("click", e => {
-  const u = e.target.dataset && e.target.dataset.unfold;
-  if (u !== undefined) unfold(+u);
 });
 
 // ═══════════ 自动补全 ═══════════
@@ -365,8 +319,6 @@ $("tpl").addEventListener("input", e => {
   } else acHide();
 });
 $("tpl").addEventListener("scroll", () => {
-  $("hl").parentElement.scrollTop = $("tpl").scrollTop;
-  $("hl").parentElement.scrollLeft = $("tpl").scrollLeft;
   $("gutter").scrollTop = $("tpl").scrollTop;
   acHide();
 });
