@@ -102,6 +102,33 @@ netparse diff --dry-run                       # 只打印范围不真跑
 
 产出 19 列三栏表（incumbent / 修前 / 修后），列级填充率与差异根因。
 
+**本质**：回归验收工具——回答「netparse 与现有生产管线逐字段差多少」。
+三侧对比：incumbent（生产基准）/ 修前（`baseline-template.cmdb` 冻结的旧模板）/
+修后（当前模板）。
+
+**四个范围参数的使用场景**：
+
+| 参数 | 场景 | 耗时感 |
+|---|---|---|
+| `--dry-run` | 跑之前先看会扫到哪些文件/月份，确认范围 | 秒级 |
+| `--sample N` | **日常迭代主力**：模板每次改动后的快速回归，分层抽样足以暴露绝大多数字段回归 | 几分钟 |
+| `--month <名>` | 定位某批次配置变更的影响面，或某列差异只在特定月份出现时缩小范围 | 视范围 |
+| `--all` | 模板大版本定稿/上线前的**终验**，出正式验收报告 | ~490 秒 |
+
+可组合：`--month` 与 `--sample` 叠加 = 某月内抽样；`--jobs 4` 并行加速（结果与并行度无关）。
+
+**典型工作流**：
+
+```bash
+netparse diff --dry-run              # 1. 确认范围
+netparse diff --sample 200          # 2. 日常回归，发现问题
+netparse diff --month cfgfile_20251224 --all   # 3. 定位问题月份
+netparse diff --all --jobs 4        # 4. 定稿终验
+```
+
+前提：本机挂了生产配置目录（`readonly_guard --verify` 通过），且能只读加载生产
+`build_excel.py`。没有生产环境的机器跑不了这个子命令（parse/lint 不受影响）。
+
 ---
 
 ## `netparse readonly` —— 只读守卫
