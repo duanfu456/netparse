@@ -71,6 +71,7 @@ def do_lint(template_text):
              "parent": c.parent.name if c.parent else "",
              "fields": len(c.all_fields),
              "fieldNames": sorted(c.all_fields.keys()),
+             "fieldFuncs": {p: f.func for p, f in c.all_fields.items() if f.func},
              "rules": len(c.rules)} for c in colls]
     # fieldNames 含嵌套路径（QosCar.Cir / Vrrp.VirtualIp.Address），
     # ${ 补全直接可用 —— all_fields 的 key 就是字段路径。

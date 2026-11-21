@@ -367,8 +367,9 @@ Statistic   type(dict) desc(流量统计)
 
 ## 4. 场景手册
 
-每个场景三段：**配置原文 → 模板 → 输出**。共 15 个场景，1-7 讲字段怎么抓，
-8-12 讲结构怎么搭，13-15 讲作用域与分流（最容易踩坑的三种）。
+每个场景三段：**配置原文 → 模板 → 输出**。共 16 个场景，1-7 讲字段怎么抓，
+8-12 讲结构怎么搭，13-15 讲作用域与分流（最容易踩坑的三种），16 讲字段级
+Python transform 函数。
 
 ### 场景 1 · 抓一个简单字段
 
@@ -1108,3 +1109,63 @@ ACL rule 现网 103 种形态。穷举 `permit/deny × source/destination` 6 条
 
 华为现网 318 台缩进 100% 一致（8.1），所以本仓库的华为模板用了 `indent(n)`
 是安全的；跨厂商模板不要照抄这个写法。
+
+
+### 场景 16 · 字段级 Python transform（`[python]` / `[python_file]` / `func=`）
+
+**用途**：类型转换覆盖不了的派生逻辑——接口类型推断、掩码→前缀长、kbps→Mbps、
+NQA 主键统一。
+
+**两种放置方式**：
+
+```text
+[python_file]                     ← 外部 .py 文件（相对本模板的路径，可多条）
+iface_transforms.py               ← 多模板共用 / 超 30 行 / 需要单测的逻辑放这里
+
+[python]                          ← 内联代码（小函数就地写；可 import 上面的模块）
+def kbps_to_m(value, record=None):
+    return round(value / 1024, 1) if value else None
+
+[value]
+Name type(str) reg(\S+) option(Key)
+Type type(str) func=iface_type desc(接口类型)          ← 引用不分来源
+Mask type(str) reg(\S+) func=mask_to_prefix desc(前缀长)
+Cir  type(int) reg(\d+) func=kbps_to_m desc(Mbps)
+[rule]
+...
+```
+
+**函数签名（必须遵守）**：
+
+```python
+def f(value, record=None):
+    # value —— 本字段捕获值（已过 type 转换）；无捕获行时为 None
+    # record —— 当前记录半成品 dict（跨字段派生从这里取）
+    # 返回 None 表示"不写"，字段留空/保留原值
+```
+
+**两种执行路径**：
+
+| 场景 | value | 触发时机 |
+|---|---|---|
+| 字段有捕获行（如 Cir） | 捕获值 | 每次规则命中、类型转换后 |
+| 字段无捕获行（如 Type 由 Name 派生） | None | 记录 commit 时补算一次 |
+
+**派生函数标准写法**（value=None 时从 record 取）：
+
+```python
+def iface_type(value, record=None):
+    name = value or (record or {}).get("Name")   # 优先捕获值，其次同记录字段
+    if not name:
+        return None
+    ...
+```
+
+**失败语义**：返回 `None` → 字段留空（派生模式）/保留原值（捕获模式）；
+抛异常 → 引擎捕获、保留原值、lint 警告（同一异常去重，不会刷屏）。
+
+**lint 检查**：`func=` 引用不存在的名字 = 错误；`secret` 字段禁止 `func=` = 错误；
+`[python_file]` 文件缺失 = 解析期报错；跨来源函数重名 = 警告。
+
+**安全模型**：`[python]`/`[python_file]` 是可信代码（能改模板=能改仓库），
+引擎不做沙箱；`python_file` 的解析绝对路径在 lint 输出中可见。

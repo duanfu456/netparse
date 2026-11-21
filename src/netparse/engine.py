@@ -29,6 +29,7 @@
 
     netparse parse <模板> <配置文件> [--json] [--lint]
 """
+import os
 import re
 import sys as _sys
 import types as _types
@@ -47,6 +48,15 @@ CONFIG = _masking.CONFIG
 
 #: 字段同时声明了多个 type（如 type(secret) type(int)）时记这个标记
 TYPE_CONFLICT_KEY = "__type_conflict__"
+
+# ── transform 注册表 ─────────────────────────────────
+# func= 引用的符号表：{名字: 可调用}。
+# 来源：[python_file] 各模块公开符号 + [python] 段内联符号。
+# 内联 > 文件（就近覆盖）。随 parse_template 结果存放在 Coll 之外的全局不可行
+# （多模板并存），所以挂在 parse_template 返回的**列表容器属性**上。
+import importlib.util as _imp_util
+
+_RUNTIME_WARN_SEEN = set()   # (字段路径, 异常摘要) 去重，避免编辑器实时 lint 重复报
 
 #: lint 用的凭据关键字（词边界匹配，见 lint 的 _rule_has_credential_keyword）
 CREDENTIAL_KEYWORDS = (
@@ -120,6 +130,7 @@ class Field:
         self.type = attrs.get("type", "str")
         self.default = attrs.get("default")
         self.reg = attrs.get("reg", r"\S+")
+        self.func = attrs.get("func")      # transform 函数名（注册表查找）
         self.desc = attrs.get("desc")
         self.inherit = attrs.get("inherit")
         self.required = "Required" in flags
@@ -233,11 +244,16 @@ def parse_template(path):
     colls = []
     stack = []        # (indent, Coll)
     cur = None        # 当前集合
-    mode = None       # None | value | rule
+    mode = None       # None | value | rule | python
     base_indent = None
     pending = None    # 待落盘的规则（可能多行）
     field_stack = []  # (indent, Field)
     section_coll = None
+    # ── transform 段收集 ──
+    py_file_lines = []   # [python_file] 段的路径行（声明顺序）
+    py_blocks = []       # [python] 段代码块（物理顺序，处理时统一按出现顺序执行）
+    cur_py = None        # 当前 python 段的行缓冲
+    tpath = os.path.abspath(path)
 
     def new_collection(toks, indent):
         nonlocal stack, cur
@@ -275,7 +291,7 @@ def parse_template(path):
             # 会让后续 `^ {1}xxx` 规则走进「段外」分支被当成集合声明吞掉。
             # 而 [value] 段后的空行必须回到「段外」，否则下一条
             # `Interfaces type(list) ...` 会被当成字段声明 —— 所以按上一段类型区分。
-            if mode != "rule":
+            if mode not in ("rule", "python", "python_file"):
                 mode = None
                 field_stack = []
             base_indent = None
@@ -283,15 +299,60 @@ def parse_template(path):
         if st.startswith("#"):
             continue
         low = st.lower()
-        if low in ("[value]", "[vlaue]", "[rule]"):
+        if low in ("[value]", "[vlaue]", "[rule]", "[python]", "[python_file]"):
             flush_pending()
+            if low == "[python]":
+                # 开新 python 块（前一缓冲收尾）
+                if cur_py:
+                    py_blocks.append("\n".join(cur_py))
+                cur_py = []
+                mode = "python"
+                continue
+            if low == "[python_file]":
+                if cur_py:
+                    py_blocks.append("\n".join(cur_py))
+                cur_py = None
+                mode = "python_file"
+                continue
+            # 收尾悬挂的 python 块
+            if cur_py:
+                py_blocks.append("\n".join(cur_py))
+                cur_py = None
             mode = "value" if low != "[rule]" else "rule"
             section_coll = cur
             base_indent = None
             field_stack = []
             continue
         if st.startswith("["):
-            continue
+            # 未知段头：显式报错（此前是静默 continue，会吞掉用户拼错的段头）
+            if mode == "python":
+                if cur_py is None:
+                    cur_py = []
+                cur_py.append(s)      # python 段内的 [ 开头行按代码收（列表下标等）
+                continue
+            raise ValueError(
+                "%s: 未知的段头 %r（支持 [value] / [rule] / [python] / [python_file]）"
+                % (path, st))
+        if mode == "python":
+            # 集合声明行（顶格 名字 type(...)）结束 python 段 —— 与 [value] 段
+            # "空行回段外"的直觉一致：新集合声明意味着 python 段结束。
+            if re.match(r"^[A-Z]\w*\s+type\(", s):
+                if cur_py:
+                    py_blocks.append("\n".join(cur_py))
+                cur_py = None
+                mode = None
+                # 落到下方段外分支正常处理集合声明
+            else:
+                if cur_py is None:
+                    cur_py = []
+                cur_py.append(s)
+                continue
+        if mode == "python_file":
+            if re.match(r"^[A-Z]\w*\s+type\(", s):
+                mode = None      # 集合声明行结束 python_file 段，落到段外分支
+            else:
+                py_file_lines.append(s)
+                continue
 
         indent = len(s) - len(s.lstrip())
         toks = split_tokens(st)
@@ -348,7 +409,62 @@ def parse_template(path):
     for c in colls:
         c.key_fields = [f.path for f in c.all_fields.values()
                         if f.is_key and f.parent is None]
-    return colls
+
+    # ── transform：加载 [python_file] + 执行 [python] ──
+    registry = {}
+    load_warnings = []
+    if cur_py:
+        py_blocks.append("\n".join(cur_py))
+    tpl_dir = os.path.dirname(tpath)
+    added_syspath = []
+    try:
+        for rel in py_file_lines:
+            p = os.path.normpath(os.path.join(tpl_dir, rel))
+            if not os.path.isfile(p):
+                raise TemplateFileError(
+                    "%s: [python_file] 指向的文件不存在: %s" % (path, p))
+            if tpl_dir not in _sys.path:
+                _sys.path.insert(0, tpl_dir)
+                added_syspath.append(tpl_dir)
+            modname = "_np_tf_" + re.sub(r"[^\w]", "_", os.path.splitext(rel)[0])
+            spec = _imp_util.spec_from_file_location(modname, p)
+            mod = _imp_util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            for sym in dir(mod):
+                if not sym.startswith("_") and callable(getattr(mod, sym)):
+                    registry[sym] = getattr(mod, sym)
+    finally:
+        for d in added_syspath:
+            try:
+                _sys.path.remove(d)
+            except ValueError:
+                pass
+
+    inline_ns = {"__name__": "_np_inline_%d" % id(colls)}
+    for i, code in enumerate(py_blocks):
+        try:
+            exec(compile(code, "<%s [python] #%d>" % (path, i + 1), "exec"), inline_ns)
+        except SyntaxError as e:
+            raise TemplateFileError(
+                "%s: [python] 段 #%d 语法错误: %s" % (path, i + 1, e)) from None
+    for sym in list(inline_ns):
+        if not sym.startswith("__") and callable(inline_ns[sym]):
+            registry[sym] = inline_ns[sym]
+
+    return _ParsedTemplate(colls, registry, load_warnings)
+
+
+class _ParsedTemplate(list):
+    """parse_template 的返回值：兼容 list（历史用法），额外携带 transform 注册表。"""
+
+    def __init__(self, colls, registry, warnings):
+        super().__init__(colls)
+        self.registry = registry
+        self.transform_warnings = warnings
+
+
+class TemplateFileError(Exception):
+    """[python_file] 缺失 / [python] 语法错误等模板级致命问题。"""
 
 
 # ── 规则编译 ──────────────────────────────────────────
@@ -464,6 +580,34 @@ def convert(value, fld):
     return value
 
 
+def apply_func(value, fld, registry, record, warnings, coll_name):
+    """convert 之后执行字段声明的 func= transform。
+
+    语义（design.md §2.3）：
+    - registry 无此名字 → 保持原值（lint 负责报"引用不存在"，这里不炸）
+    - 返回 None → 保持原值
+    - 抛异常 → 捕获、保留原值、按 (字段路径, 异常摘要) 去重记警告
+    """
+    if fld is None or fld.func is None or value is None:
+        return value
+    fn = registry.get(fld.func)
+    if fn is None:
+        return value
+    try:
+        out = fn(value, record)
+    except Exception as e:
+        key = (fld.path, "%s: %s" % (type(e).__name__, e))
+        if key not in _RUNTIME_WARN_SEEN:
+            _RUNTIME_WARN_SEEN.add(key)
+            warnings.append("[transform] %s.%s: 函数 %s 执行失败 %s: %s（保留原值 %r）"
+                            % (coll_name, fld.path, fld.func,
+                               type(e).__name__, e, value))
+        return value
+    if out is None:
+        return value
+    return out
+
+
 def get_path(obj, path):
     cur = obj
     for p in path.split("."):
@@ -483,7 +627,7 @@ def set_path(obj, segs, value):
     obj[segs[-1]] = value
 
 
-def apply_writes(rec, writes, coll):
+def apply_writes(rec, writes, coll, registry=None, tw=None, coll_name=""):
     """把 (字段路径, 值) 写进记录。
 
     同一路径首段若是 type(list) 的字段 → 追加一个新元素；
@@ -507,8 +651,9 @@ def apply_writes(rec, writes, coll):
                 tf = coll.all_fields.get(path)
                 if tf is not None and tf.type_conflict:
                     continue        # type 声明冲突 → 该字段按缺字段处理，不产出
-                set_path(elem, segs,
-                         convert(mask_value(value, tf, CONFIG.value, CONFIG.heuristic), tf))
+                cv = convert(mask_value(value, tf, CONFIG.value, CONFIG.heuristic), tf)
+                cv = apply_func(cv, tf, registry, rec, tw if tw is not None else [], coll_name)
+                set_path(elem, segs, cv)
             bucket = rec.setdefault(p0, [])
             if isinstance(bucket, dict):     # 容错：之前被写成 dict
                 bucket = [bucket]
@@ -530,6 +675,7 @@ def apply_writes(rec, writes, coll):
                     continue        # type 声明冲突 → 该字段按缺字段处理，不产出
                 converted = convert(
                     mask_value(value, tf, CONFIG.value, CONFIG.heuristic), tf)
+                converted = apply_func(converted, tf, registry, rec, tw if tw is not None else [], coll_name)
                 lpre = _list_prefix(rec, segs, coll)
                 if lpre is None:
                     set_path(rec, segs, converted)
@@ -646,6 +792,38 @@ def merge_by_key(elems, coll):
     return merged
 
 
+def derive_funcs(rec, coll, registry, tw, coll_name):
+    """对『声明了 func 但记录里没有值』的字段补跑派生（value=None 传入）。
+
+    典型场景：Type 由 func=iface_type(Name) 从同记录的 Name 派生——
+    Type 在 [rule] 里没有对应捕获行，正常流程永远不会执行到它。
+    规则：只有当函数**返回非 None** 才写入（函数自己决定缺依据时返回 None）。
+    """
+    for fld in coll.all_fields.values():
+        if fld.func is None or fld.type == "list":
+            continue
+        if get_path(rec, fld.path) is not None:
+            continue
+        fn = registry.get(fld.func)
+        if fn is None:
+            continue
+        segs = fld.path.split(".")
+        if len(segs) > 1 and get_path(rec, ".".join(segs[:-1])) is None:
+            continue                     # 父对象不存在 → 不凭空产出
+        try:
+            out = fn(None, rec)
+        except Exception as e:
+            key = (fld.path, "%s: %s" % (type(e).__name__, e))
+            if key not in _RUNTIME_WARN_SEEN:
+                _RUNTIME_WARN_SEEN.add(key)
+                tw.append("[transform] %s.%s: 派生 %s 执行失败 %s: %s（字段留空）"
+                          % (coll_name, fld.path, fld.func,
+                             type(e).__name__, e))
+            continue
+        if out is not None:
+            set_path(rec, segs, out)
+
+
 def apply_defaults(rec, coll):
     """填充声明了 default 但没抓到值的字段。
 
@@ -674,8 +852,15 @@ def run(colls, lines, trace=None):
     事后用正则重测会把作用域外的同名命令误判成已覆盖。
 
     每次调用会把脱敏统计（masking.STATS）复位 → 读完即"本次运行"的统计。
+
+    transform 警告收集在 colls.transform_warnings（每次 run 覆盖）。
     """
     STATS.reset()
+    registry = getattr(colls, "registry", {})
+    _RUNTIME_WARN_SEEN.clear()
+    tw = []
+    colls.transform_warnings = tw
+    ctx = {"registry": registry, "tw": tw}
     root = Coll("__root__", {}, set(), -1, None)
     compiled = {}
     for c in colls:
@@ -719,6 +904,7 @@ def run(colls, lines, trace=None):
             as_dict = cdef is not None and cdef.type == "dict" and len(elems) == 1
             fr.rec[cname] = elems[0] if as_dict else elems
         apply_defaults(fr.rec, coll)
+        derive_funcs(fr.rec, coll, registry, tw, coll.name)
         if not check_required(fr.rec, coll):
             return
         parent = frame_of.get(coll.parent.name) if coll.parent else None
@@ -805,7 +991,7 @@ def run(colls, lines, trace=None):
                 commit(fr)
                 fr.rec = {}
                 fr.children = OrderedDict()
-                _apply(fr, line, compiled, last, from_start=True)
+                _apply(fr, line, compiled, last, from_start=True, ctx=ctx)
                 hit_name = fr.coll.name
             elif kind == "child":
                 idx = next((i for i, f in enumerate(stack) if f.coll is coll), None)
@@ -820,13 +1006,13 @@ def run(colls, lines, trace=None):
                     stack[idx].children = OrderedDict()
                     fr = stack[idx]
                 frame_of[coll.name] = fr
-                _apply(fr, line, compiled, last, from_start=True)
+                _apply(fr, line, compiled, last, from_start=True, ctx=ctx)
                 hit_name = fr.coll.name
             else:   # new
                 fr = Frame(coll)
                 stack.append(fr)
                 frame_of[coll.name] = fr
-                _apply(fr, line, compiled, last, from_start=True)
+                _apply(fr, line, compiled, last, from_start=True, ctx=ctx)
                 hit_name = fr.coll.name
             if trace is not None:
                 trace.append((no, line, hit_name, [f.coll.name for f in stack]))
@@ -853,7 +1039,7 @@ def run(colls, lines, trace=None):
 
         # ③ 栈顶向下匹配；不匹配继续父层
         for depth in range(len(stack) - 1, -1, -1):
-            if _apply(stack[depth], line, compiled, last):
+            if _apply(stack[depth], line, compiled, last, ctx=ctx):
                 hit_name = stack[depth].coll.name
                 break
         if trace is not None:
@@ -867,14 +1053,19 @@ def run(colls, lines, trace=None):
     return results
 
 
-def _apply(fr, line, compiled, last, from_start=False):
+def _apply(fr, line, compiled, last, from_start=False, ctx=None):
     """用 fr 的规则匹配 line。命中返回 True。
 
     from_start=True 表示这一行是刚命中 start 的视图入口行（如 `bas`）。
     此时**不做缩进校验**：indent(n) 约束的是「本集合的规则只在缩进 n 生效」，
     而视图入口行本身属于父层级（`bas` 在缩进 1，而 BasView 正文在缩进 2）。
     把两者混在一起会让 bas 的 start 命中后立刻被缩进校验打回。
+
+    ctx: run() 传入的 {'registry': ..., 'tw': [...]},transform 用。
     """
+    ctx = ctx or {}
+    registry = ctx.get("registry", {})
+    tw = ctx.get("tw") if ctx.get("tw") is not None else []
     coll = fr.coll
     if coll.name not in compiled:
         return False
@@ -917,7 +1108,7 @@ def _apply(fr, line, compiled, last, from_start=False):
         target = cr.target
         if target is None:
             # 省略 -> ：全部捕获组写进当前记录
-            apply_writes(fr.rec, writes, coll)
+            apply_writes(fr.rec, writes, coll, registry, tw, coll.name)
             return True
 
         kind, a, b = parse_target(target)
@@ -937,10 +1128,10 @@ def _apply(fr, line, compiled, last, from_start=False):
                         obj[mem] = masked[mem]
             if base == coll.name:
                 # 目标就是当前集合 → 写进当前记录
-                apply_writes(fr.rec, [(k, v) for k, v in obj.items()], coll)
+                apply_writes(fr.rec, [(k, v) for k, v in obj.items()], coll, registry, tw, coll.name)
             elif base in coll.all_fields:
                 # 目标是本层的嵌套字段（list → 追加元素，dict → 写进去）
-                apply_writes(fr.rec, [(base + "." + k, v) for k, v in obj.items()], coll)
+                apply_writes(fr.rec, [(base + "." + k, v) for k, v in obj.items()], coll, registry, tw, coll.name)
             else:
                 # 目标是一个（未展开的）子集合 → 塞进当前记录
                 fr.rec[base] = dict(obj)
@@ -974,7 +1165,7 @@ def _apply(fr, line, compiled, last, from_start=False):
                     out.append((n, masked[n]))
                 else:
                     out.append((n, v))
-            apply_writes(fr.rec, out, coll)
+            apply_writes(fr.rec, out, coll, registry, tw, coll.name)
         return True
     return False
 
@@ -1046,6 +1237,27 @@ def _rule_fields(c, rule, coll_by_name):
 def lint(colls):
     """模板体检。返回 [(级别, 集合, 说明)]"""
     issues = []
+    registry = getattr(colls, "registry", {})
+    # ── transform 检查 ──
+    # ① func= 引用必须存在于注册表
+    seen_funcs = {}
+    for c in colls:
+        for fld in c.all_fields.values():
+            if fld.func is None:
+                continue
+            if fld.is_secret():
+                issues.append(("错误", c.name,
+                               f"secret 字段 {fld.path} 禁止 func=（防止凭据经函数外泄）"))
+                continue
+            if fld.func not in registry:
+                issues.append(("错误", c.name,
+                               f"字段 {fld.path} 的 func={fld.func} 未定义"
+                               f"（检查 [python] 段或 [python_file] 文件）"))
+                continue
+            seen_funcs.setdefault(fld.func, []).append(c.name)
+    # ② python_file 解析路径可见性（安全模型：可见即约束）
+    for w in getattr(colls, "transform_warnings", []) or []:
+        issues.append(("警告", "", w))
     coll_by_name = {c.name: c for c in colls}
     for c in colls:
         if "Key" in c.attrs or "Required" in c.attrs:

@@ -149,7 +149,7 @@ function analyze(text) {
     let kind = "other";
     if (!s) kind = "other";
     else if (s.startsWith("#")) kind = "comment";
-    else if (/^\s*\[(value|rule)\]\s*$/.test(ln)) kind = "sec";
+    else if (/^\s*\[(value|rule|python|python_file)\]\s*$/.test(ln)) kind = "sec";
     else if (/^[A-Z]\w*\s+type\(/.test(ln) && !/^\s/.test(ln)) { kind = "coll"; }
     else kind = "rule-or-field";
     kinds.push(kind);

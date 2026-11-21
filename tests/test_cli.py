@@ -58,8 +58,10 @@ check("公共 API 齐全", not missing, "缺 %r" % missing)
 check("版本号存在", isinstance(netparse.__version__, str) and netparse.__version__)
 
 check("包在 src 下能被找到", os.path.isfile(os.path.join(ROOT, "src", "netparse", "engine.py")))
-check("引擎不含 sys.path hack", "sys.path.insert" not in
-      open(os.path.join(ROOT, "src", "netparse", "engine.py"), encoding="utf-8").read())
+_eng_src = open(os.path.join(ROOT, "src", "netparse", "engine.py"), encoding="utf-8").read()
+check("引擎 sys.path 注入必须配对恢复（不留永久污染）",
+      "sys.path.insert" not in _eng_src
+      or ("added_syspath" in _eng_src and "_sys.path.remove(d)" in _eng_src))
 check("pyproject 存在且声明了入口",
       os.path.isfile(os.path.join(ROOT, "pyproject.toml")) and
       'netparse = "netparse.cli:main"' in
