@@ -74,40 +74,37 @@ def main(args):
 
     files, is_batch = _collect_config_files(args.config)
 
-    # ── 批量模式：config 是文件夹 ──
+    # ── 批量模式：config 是文件夹 → 每个文件一个同名 .json，写入输出目录 ──
     if is_batch:
-        out_path = args.output
-        if not out_path:
-            raise SystemExit("错误：config 是文件夹时必须指定输出路径（第三个参数）")
-        results = {}
+        out_dir = args.output
+        if not out_dir:
+            raise SystemExit("错误：config 是文件夹时必须指定输出目录（第三个参数）")
+        os.makedirs(out_dir, exist_ok=True)
+        root = os.path.abspath(args.config)
         failures = []
         for fp in files:
-            rel = os.path.relpath(fp, os.path.abspath(args.config))
+            rel = os.path.relpath(fp, root)
             try:
                 with open(fp, encoding="utf-8", errors="replace") as f:
                     lines = f.readlines()
                 res = engine.run(colls, lines)
-                results[rel] = res
+                # 相对路径映射到输出目录（保留子目录结构），扩展名换成 .json
+                out_file = os.path.join(out_dir, os.path.splitext(rel)[0] + ".json")
+                os.makedirs(os.path.dirname(os.path.abspath(out_file)), exist_ok=True)
+                with open(out_file, "w", encoding="utf-8") as fh:
+                    json.dump(res, fh, ensure_ascii=False, indent=2)
             except Exception as e:
                 failures.append({"file": rel, "error": str(e)})
                 sys.stderr.write("[fail] %s: %s\n" % (rel, e))
-        payload = {
-            "source": os.path.abspath(args.config),
-            "template": os.path.abspath(args.template),
-            "files": len(files),
-            "ok": len(files) - len(failures),
-            "failed": len(failures),
-            "failures": failures,
-            "results": results,
-        }
-        os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-        with open(out_path, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, ensure_ascii=False, indent=2)
         sys.stderr.write("[mask] L1=%d L2=%d mask=%r heuristic=%s\n"
                          % (masking.STATS.l1_hits, masking.STATS.l2_hits,
                             masking.CONFIG.value, masking.CONFIG.heuristic))
+        ok = len(files) - len(failures)
         print("批量解析完成：%d 文件 / 成功 %d / 失败 %d → %s"
-              % (len(files), payload["ok"], payload["failed"], out_path))
+              % (len(files), ok, len(failures), os.path.abspath(out_dir)))
+        if failures:
+            for f in failures:
+                print("  失败: %s (%s)" % (f["file"], f["error"]))
         return 0 if not failures else 1
 
     # ── 单文件模式 ──
