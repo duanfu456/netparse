@@ -27,8 +27,10 @@ netparse parse <模板路径> <配置文件 或 配置文件夹> [输出路径] 
 |---|---|
 | `template`（位置参数） | `.cmdb` 模板路径，任意目录 |
 | `config`（位置参数） | **配置文件或文件夹**——文件夹 = 递归解析里面全部文件 |
-| `output`（位置参数，可选） | 输出 JSON 路径；不指定则打印到 stdout |
+| `output`（位置参数，可选） | 单文件模式 = 输出 JSON 文件路径；文件夹模式 = 输出**目录**（必填） |
 | `--json` | stdout 输出完整 JSON（与 output 二选一） |
+| `--mask-value <串>` | 自定义掩码串（默认 `******`） |
+| `--no-mask-heuristic` | 关闭密文形态兜底，只保留模板 `type(secret)` 的精确遮蔽 |
 
 **四种用法**：
 
@@ -39,29 +41,22 @@ netparse parse tpl.cmdb device.cfg
 netparse parse tpl.cmdb device.cfg --json
 # ③ 单文件，落盘
 netparse parse tpl.cmdb device.cfg out.json
-# ④ 整个文件夹批量（必须给输出路径），含子目录、失败文件单独记录
-netparse parse tpl.cmdb E://配置//华为// out.json
+# ④ 整个文件夹批量（必须给输出目录）：每个配置文件一个同名 .json
+netparse parse tpl.cmdb E:/配置/华为/ E:/out/
 ```
 
-**批量模式输出 JSON 结构**：
+**批量模式**：输出路径是**目录**。每个配置文件生成一个同名 `.json`
+（子目录结构原样保留，扩展名换成 `.json`）：
 
-```json
-{
-  "source": "E:/配置/华为",
-  "template": "D:/netparse/templates/huawei-vrp.cmdb",
-  "files": 318, "ok": 318, "failed": 0,
-  "failures": [],
-  "results": { "设备A.cfg": { "Interfaces": [...], ... },
-               "子目录/设备B.cfg": {...} }
-}
+```text
+E:/配置/华为/          →  E:/out/
+├─ 设备A.cfg              ├─ 设备A.json
+└─ 子目录/设备B.cfg       └─ 子目录/设备B.json
 ```
 
-- `results` 的 key 是**相对文件夹的路径**（含子目录）
-- 单个文件解析异常不会中断批量，记进 `failures`，退出码非 0
-- 文件夹模式必须给输出路径（缺省报错退出码 1）
-| `--json` | stdout 输出完整解析 JSON；lint/统计信息走 stderr，方便管道 |
-| `--mask-value <串>` | 自定义掩码串（默认 `******`） |
-| `--no-mask-heuristic` | 关闭密文形态兜底，只保留模板 `type(secret)` 的精确遮蔽 |
+- 每个 JSON 的内容 = 该文件单独解析的结果（顶层 key 是集合名），可直接逐文件入库
+- 单个文件解析异常不会中断批量：stderr 打 `[fail] 文件名: 原因`，退出码非 0
+- 文件夹模式必须给输出目录（缺省报错退出码 1）
 
 **默认输出**（人类可读）：脱敏统计 → lint 提示 → 集合树 → 各集合条数 + 前 2 条样例：
 
@@ -85,7 +80,7 @@ RouteStatics           type=list   ... Key=Prefix,Mask,NextHop,VpnInstance
 netparse parse templates/huawei-vrp.cmdb device.cfg --json 2>/dev/null | jq ".Interfaces[0]"
 ```
 
-**批量解析一个目录**（PowerShell / bash 循环，或用库方式——见 PYTHON-GUIDE.md，批量场景库方式更快：模板只编译一次）。
+**批量上千台**：命令行文件夹模式即可（模板只编译一次）；需要更复杂逻辑（如按设备过滤、每台单独落文件）用库方式，见 PYTHON-GUIDE.md。
 
 **脱敏说明**：默认双层开启——模板 `type(secret)` 精确遮蔽（L1）+ 密文形态兜底（L2，华为 `%^%#...%^%#`、中兴 `*NN*base64` / `$5$salt$hash`）。落库/外发场景保持默认即可。
 

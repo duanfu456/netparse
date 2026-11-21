@@ -44,8 +44,8 @@ for cfg in Path(r"E:\配置文件\华为").rglob("*"):
 318 台真机实测：编译一次 + 循环执行，8440 文件全量约 490 秒（17 文件/秒），无性能压力。
 
 > **不想写代码**？CLI 已内置文件夹批量：
-> `netparse parse tpl.cmdb E://配置//华为// out.json` —— 输出 JSON 带
-> `files/ok/failed/failures/results` 汇总结构（results 的 key 是相对路径）。
+> `netparse parse tpl.cmdb E:/配置/华为/ E:/out/` —— 每个配置文件生成一个
+> 同名 `.json`（子目录结构保留），每个 JSON 就是该文件单独解析的结果。
 > 语义与上面的循环一致（模板只编译一次），见 CLI-GUIDE。
 
 ## 读取结果
