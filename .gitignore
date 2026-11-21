@@ -6,3 +6,7 @@ diff-report/
 *.egg-info/
 build/
 dist/
+# PyInstaller 产物
+build/
+dist/
+*.spec
