@@ -128,6 +128,7 @@ def iface_type(value, record=None):
    ```bash
    netparse lint xx.cmdb --strict                       # 体检
    netparse parse xx.cmdb 样例配置 --json | jq           # 看输出
+   netparse parse xx.cmdb 配置文件夹 out.json            # 整个文件夹批量
    python tools/_probe_conserve.py                      # 块数守恒（真机）
    ```
 6. 有 `func=` 的字段：抽样核对派生结果（编辑器右栏 JSON 直接看）

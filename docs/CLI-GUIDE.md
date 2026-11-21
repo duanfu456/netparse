@@ -17,16 +17,48 @@ netparse readonly --verify                                     # 只读守卫：
 
 ---
 
-## `netparse parse` —— 解析配置文件
+## `netparse parse` —— 解析配置文件 / 文件夹
 
 ```bash
-netparse parse <模板路径> <配置文件> [选项]
+netparse parse <模板路径> <配置文件 或 配置文件夹> [输出路径] [选项]
 ```
 
 | 参数 | 说明 |
 |---|---|
 | `template`（位置参数） | `.cmdb` 模板路径，任意目录 |
-| `config`（位置参数） | 配置文件路径 |
+| `config`（位置参数） | **配置文件或文件夹**——文件夹 = 递归解析里面全部文件 |
+| `output`（位置参数，可选） | 输出 JSON 路径；不指定则打印到 stdout |
+| `--json` | stdout 输出完整 JSON（与 output 二选一） |
+
+**四种用法**：
+
+```bash
+# ① 单文件，stdout 摘要（人看）
+netparse parse tpl.cmdb device.cfg
+# ② 单文件，stdout 完整 JSON（管道）
+netparse parse tpl.cmdb device.cfg --json
+# ③ 单文件，落盘
+netparse parse tpl.cmdb device.cfg out.json
+# ④ 整个文件夹批量（必须给输出路径），含子目录、失败文件单独记录
+netparse parse tpl.cmdb E://配置//华为// out.json
+```
+
+**批量模式输出 JSON 结构**：
+
+```json
+{
+  "source": "E:/配置/华为",
+  "template": "D:/netparse/templates/huawei-vrp.cmdb",
+  "files": 318, "ok": 318, "failed": 0,
+  "failures": [],
+  "results": { "设备A.cfg": { "Interfaces": [...], ... },
+               "子目录/设备B.cfg": {...} }
+}
+```
+
+- `results` 的 key 是**相对文件夹的路径**（含子目录）
+- 单个文件解析异常不会中断批量，记进 `failures`，退出码非 0
+- 文件夹模式必须给输出路径（缺省报错退出码 1）
 | `--json` | stdout 输出完整解析 JSON；lint/统计信息走 stderr，方便管道 |
 | `--mask-value <串>` | 自定义掩码串（默认 `******`） |
 | `--no-mask-heuristic` | 关闭密文形态兜底，只保留模板 `type(secret)` 的精确遮蔽 |

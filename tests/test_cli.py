@@ -133,6 +133,41 @@ check("tools/legacy 探针可用", legacy.returncode == 0 and "覆盖率" in leg
       legacy.stderr[-300:])
 
 # ── 汇总 ─────────────────────────────────────────────
+# ── parse 扩展：文件夹批量 / 输出路径 ──
+import json as _json
+import subprocess as _subprocess
+import tempfile as _tempfile
+
+def _run_parse(*argv):
+    env = {**os.environ, "https_proxy": "", "http_proxy": ""}
+    return _subprocess.run([sys.executable, "-m", "netparse", "parse", *argv],
+                           capture_output=True, text=True, cwd=ROOT, env=env)
+
+with _tempfile.TemporaryDirectory() as _td:
+    _cfg_dir = os.path.join(_td, "cfgs")
+    os.makedirs(_cfg_dir)
+    _src = open(os.path.join(ROOT, "tests", "fixtures", "sample-vrp.txt"),
+                encoding="utf-8").read()
+    for _n in ("dev1.cfg", "dev2.cfg"):
+        open(os.path.join(_cfg_dir, _n), "w", encoding="utf-8").write(_src)
+    _out = os.path.join(_td, "batch.json")
+
+    r = _run_parse(os.path.join(ROOT, "templates", "huawei-vrp.cmdb"), _cfg_dir, _out)
+    d = _json.load(open(_out, encoding="utf-8")) if os.path.isfile(_out) else {}
+    check("批量解析：文件夹 + 输出路径",
+          r.returncode == 0 and d.get("files") == 2 and d.get("ok") == 2
+          and "dev1.cfg" in d.get("results", {}))
+
+    out2 = os.path.join(_td, "single.json")
+    r2 = _run_parse(os.path.join(ROOT, "templates", "huawei-vrp.cmdb"),
+                    os.path.join(ROOT, "tests", "fixtures", "sample-vrp.txt"), out2)
+    d2 = _json.load(open(out2, encoding="utf-8")) if os.path.isfile(out2) else {}
+    check("单文件 + 输出路径", r2.returncode == 0 and len(d2.get("Interfaces", [])) == 4)
+
+    r3 = _run_parse(os.path.join(ROOT, "templates", "huawei-vrp.cmdb"), _cfg_dir)
+    check("文件夹缺输出路径报错", r3.returncode == 1
+          and "必须指定输出路径" in (r3.stderr or ""))
+
 print("CLI 与包结构验收：%d 项通过 / %d 项失败" % (PASSED, len(FAILURES)))
 if FAILURES:
     for f in FAILURES:
