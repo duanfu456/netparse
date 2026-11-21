@@ -14,20 +14,38 @@
          font: 14px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif; height: 100vh;
          display: flex; flex-direction: column; }
   header { padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
-           display: flex; gap: 12px; align-items: center; }
+           display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   header h1 { font-size: 15px; margin: 0; font-weight: 600; }
   header select, header button { font: inherit; padding: 4px 10px; }
   header button { background: var(--accent); color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
   header button:disabled { background: #99c; cursor: wait; }
+  header button.ghost { background: #eee; color: #333; }
   #status { margin-left: auto; font-size: 12px; color: var(--muted); }
   main { flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; padding: 8px; min-height: 0; }
   section { background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
             display: flex; flex-direction: column; min-height: 0; }
   section h2 { font-size: 12px; margin: 0; padding: 6px 10px; color: var(--muted);
                border-bottom: 1px solid var(--border); font-weight: 600; }
-  textarea { flex: 1; border: 0; resize: none; padding: 10px; font: 13px/1.5 var(--mono);
-             outline: none; white-space: pre; overflow: auto; tab-size: 4; }
-  #pane-result pre { flex: 1; margin: 0; padding: 10px; font: 12px/1.45 var(--mono);
+  /* ── 高亮编辑器 ── */
+  .editor-wrap { flex: 1; position: relative; min-height: 0; overflow: hidden; }
+  .editor-wrap pre, .editor-wrap textarea {
+    position: absolute; inset: 0; margin: 0; padding: 10px;
+    font: 13px/1.5 var(--mono); tab-size: 4; white-space: pre;
+    overflow: auto; border: 0; }
+  .editor-wrap pre { pointer-events: none; color: var(--fg); background: transparent;
+                     z-index: 1; overflow: hidden; }
+  .editor-wrap textarea { background: transparent; color: transparent;
+                          caret-color: var(--fg); outline: none; resize: none; z-index: 2; }
+  .editor-wrap textarea::selection { background: rgba(9,105,218,.25); color: transparent; }
+  /* 语法着色 */
+  .tk-comment { color: #6a737d; font-style: italic; }
+  .tk-sec     { color: #8250df; font-weight: 700; }        /* [value] [rule] */
+  .tk-coll    { color: #0969da; font-weight: 700; }        /* 集合名 */
+  .tk-field   { color: #953800; }                          /* 字段名 */
+  .tk-kw      { color: #cf222e; }                          /* type/start/end/indent... */
+  .tk-str     { color: #0a7d32; }                          /* ( ... ) 内的内容 */
+  .tk-target  { color: #8250df; }                          /* -> 目标 */
+  #pane-result pre, .jsonview { flex: 1; margin: 0; padding: 10px; font: 12px/1.45 var(--mono);
                      overflow: auto; white-space: pre; }
   .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
   .badge.ok   { background: #dafbe1; color: var(--ok); }
@@ -35,12 +53,12 @@
   .badge.warn { background: #fff8c5; color: var(--warn); }
   #pane-lint .list { flex: 1; overflow: auto; padding: 8px; }
   .prob { padding: 4px 8px; margin-bottom: 4px; border-radius: 4px; font-size: 12px;
-          font-family: var(--mono); white-space: pre-wrap; word-break: break-all; }
+          font-family: var(--mono); white-space: pre-wrap; word-break: break-all; cursor: pointer; }
   .prob.err  { background: #ffebe9; color: var(--err); }
   .prob.warn { background: #fff8c5; color: var(--warn); }
   .prob.info { background: #ddf4ff; color: var(--accent); }
   .tree { flex: 1; overflow: auto; padding: 8px; font-size: 12px; }
-  .tree .coll { padding: 2px 6px; cursor: default; border-radius: 3px; }
+  .tree .coll { padding: 2px 6px; border-radius: 3px; }
   .tree .coll.sub { margin-left: 16px; color: #555; }
   .tree .coll b { color: var(--accent); }
   .tree .meta { color: var(--muted); font-family: var(--mono); }
@@ -50,6 +68,18 @@
   .trace th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; }
   .trace td.c { color: var(--accent); font-family: var(--mono); }
   .trace td.n { color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+  /* ── 自动补全弹窗 ── */
+  #ac-box { position: fixed; z-index: 99; background: var(--panel); border: 1px solid var(--border);
+            border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none;
+            max-height: 240px; overflow: auto; min-width: 220px; font: 12px/1.6 var(--mono); }
+  #ac-box .item { padding: 3px 10px; cursor: pointer; }
+  #ac-box .item:hover, #ac-box .item.sel { background: #ddf4ff; }
+  #ac-box .item b { color: var(--accent); }
+  /* 选区提示条 */
+  #sel-tip { position: fixed; z-index: 98; background: #333; color: #fff; font-size: 12px;
+             padding: 4px 10px; border-radius: 4px; display: none; }
+  #sel-tip button { margin-left: 8px; background: var(--accent); border: 0; color: #fff;
+                    border-radius: 3px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -58,55 +88,212 @@
   <label>模板 <select id="tpl-sel"></select></label>
   <label>配置 <select id="cfg-sel"></select></label>
   <button id="btn-run">lint + 解析</button>
+  <button id="btn-save" class="ghost">保存模板</button>
   <span id="status"></span>
 </header>
 <main>
-  <section id="pane-tpl"><h2>模板 (.cmdb)</h2><textarea id="tpl" spellcheck="false"></textarea></section>
+  <section id="pane-tpl"><h2>模板 (.cmdb) — 自动补全: Ctrl+Space · 选中文本试运行</h2>
+    <div class="editor-wrap"><pre aria-hidden="true"><code id="hl"></code></pre><textarea id="tpl" spellcheck="false" autocomplete="off"></textarea></div>
+  </section>
   <section id="pane-lint">
     <h2>模板体检 <span id="lint-badge"></span></h2>
     <div class="list" id="lint-list"></div>
   </section>
   <section id="pane-result">
     <h2>解析结果 <span id="parse-badge"></span>
-        <button id="btn-trace" style="float:right;font-size:11px;padding:1px 8px;background:#eee;color:#333;border:1px solid var(--border);border-radius:3px;cursor:pointer">命中明细</button></h2>
+        <button id="btn-trace" class="ghost" style="float:right;font-size:11px;padding:1px 8px;">命中明细</button></h2>
     <pre id="result"></pre>
   </section>
 </main>
+<div id="ac-box"></div>
+<div id="sel-tip"></div>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
 const TPL_FILES = ["huawei-vrp.cmdb", "zte-m6000.cmdb", "nokia-sros.cmdb"];
 const CFG_FILES = ["sample-vrp.txt"];
+let WORDS = [];   // 自动补全词表（来自 /api/words）
 
-// ── 文件加载 ─────────────────────────────────────────
-async function loadFile(kind, name, target) {
-  const r = await fetch(`/api/file?path=${encodeURIComponent(name)}`);
+// ═══════════ 语法高亮 ═══════════
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function highlight(src) {
+  const out = [];
+  for (const line of src.split("\n")) {
+    let h = esc(line);
+    // 注释整行
+    if (/^\s*#/.test(line)) { out.push(`<span class="tk-comment">${h}</span>`); continue; }
+    // 段头
+    if (/^\s*\[(value|rule)\]\s*$/.test(line)) { out.push(`<span class="tk-sec">${h}</span>`); continue; }
+    // -> 目标（从 -> 起整段染色）
+    const tIdx = h.indexOf("-&gt;");
+    let target = "";
+    if (tIdx >= 0) { target = `<span class="tk-target">${h.slice(tIdx)}</span>`; h = h.slice(0, tIdx); }
+    // 集合声明：顶格 大写名 type(...)
+    h = h.replace(/^([A-Z]\w*)(\s+)(type|start|end|indent|end_indent|desc)\b/g,
+        '<span class="tk-coll">$1</span>$2<span class="tk-kw">$3</span>');
+    // 字段声明：缩进 大写名 type(...) 或 ${字段} 引用
+    h = h.replace(/(\s)([A-Z][\w.]*)(\s+)(type|start|end|desc|option|default|reg|inherit)\b/g,
+        '$1<span class="tk-field">$2</span>$3<span class="tk-kw">$4</span>');
+    h = h.replace(/\$\{([A-Za-z_][\w.]*)\}/g, '<span class="tk-field">${$1}</span>');
+    // 关键字
+    h = h.replace(/\b(option|Key|Required|secret|list|dict|str|int|float|bool|inherit=)\b/g,
+        '<span class="tk-kw">$1</span>');
+    // ( ... ) 内容染绿（reg/desc/start 的参数）
+    h = h.replace(/\(([^()]{1,120}?)\)/g, '(<span class="tk-str">$1</span>)');
+    out.push(h + target);
+  }
+  return out.join("\n");
+}
+function syncHl() {
+  const ta = $("tpl");
+  $("hl").innerHTML = highlight(ta.value) + "\n";
+}
+
+// ═══════════ 自动补全 ═══════════
+const acBox = $("ac-box");
+let acItems = [], acSel = 0, acStart = null;
+
+function acHide() { acBox.style.display = "none"; acItems = []; }
+function acShow(prefix, caret) {
+  const p = prefix.toLowerCase();
+  acItems = WORDS.filter(w => w.toLowerCase().startsWith(p) && w.toLowerCase() !== p).slice(0, 12);
+  if (!acItems.length) { acHide(); return; }
+  acSel = 0;
+  acBox.innerHTML = acItems.map((w, i) =>
+    `<div class="item${i === 0 ? " sel" : ""}"><b>${esc(w.slice(0, prefix.length))}</b>${esc(w.slice(prefix.length))}</div>`).join("");
+  const r = getCaretPx(caret);
+  acBox.style.display = "block";
+  acBox.style.left = Math.min(r.x, window.innerWidth - 260) + "px";
+  acBox.style.top = Math.min(r.y + 20, window.innerHeight - 260) + "px";
+}
+function getCaretPx(caret) {
+  const ta = $("tpl");
+  const div = document.createElement("div");
+  const style = getComputedStyle(ta);
+  for (const k of ["font", "whiteSpace", "tabSize", "padding", "lineHeight"])
+    div.style[k] = style[k];
+  div.style.position = "absolute"; div.style.visibility = "hidden";
+  div.textContent = ta.value.slice(0, caret);
+  document.body.appendChild(div);
+  const marker = document.createElement("span");
+  marker.textContent = "\u200b";
+  div.appendChild(marker);
+  document.body.appendChild(div);
+  const x = marker.offsetLeft + ta.offsetLeft + 14, y = marker.offsetTop + ta.offsetTop + 6;
+  div.remove();
+  return {x, y};
+}
+function acApply(word) {
+  const ta = $("tpl");
+  const pos = ta.selectionStart;
+  ta.value = ta.value.slice(0, acStart) + word + ta.value.slice(pos);
+  const np = acStart + word.length;
+  ta.setSelectionRange(np, np);
+  acHide(); syncHl();
+}
+$("tpl").addEventListener("keydown", e => {
+  if (acBox.style.display === "block") {
+    if (e.key === "ArrowDown") { acSel = (acSel + 1) % acItems.length; renderAcSel(); e.preventDefault(); return; }
+    if (e.key === "ArrowUp")   { acSel = (acSel - 1 + acItems.length) % acItems.length; renderAcSel(); e.preventDefault(); return; }
+    if (e.key === "Enter" || e.key === "Tab") { acApply(acItems[acSel]); e.preventDefault(); return; }
+    if (e.key === "Escape") { acHide(); e.preventDefault(); return; }
+  } else if ((e.ctrlKey || e.metaKey) && e.key === " ") {
+    const ta = e.target, pos = ta.selectionStart;
+    const before = ta.value.slice(0, pos);
+    const m = before.match(/[A-Za-z_][\w.]*$/);
+    if (m) { acStart = pos - m[0].length; acShow(m[0], pos); e.preventDefault(); }
+    return;
+  }
+});
+function renderAcSel() {
+  [...acBox.children].forEach((el, i) => el.classList.toggle("sel", i === acSel));
+}
+$("tpl").addEventListener("input", e => {
+  syncHl();
+  const ta = e.target, pos = ta.selectionStart;
+  const before = ta.value.slice(0, pos);
+  const m = before.match(/[A-Za-z_][\w.]*$/);
+  if (m && m[0].length >= 2) { acStart = pos - m[0].length; acShow(m[0], pos); }
+  else acHide();
+});
+$("tpl").addEventListener("scroll", () => {
+  $("hl").parentElement.scrollTop = $("tpl").scrollTop;
+  $("hl").parentElement.scrollLeft = $("tpl").scrollLeft;
+  acHide();
+});
+document.addEventListener("click", e => { if (!acBox.contains(e.target)) acHide(); });
+
+// ═══════════ 选中文本试运行 ═══════════
+const selTip = $("sel-tip");
+$("tpl").addEventListener("select", () => setTimeout(showSelTip, 0));
+$("tpl").addEventListener("mouseup", () => setTimeout(showSelTip, 0));
+$("tpl").addEventListener("keyup", e => {
+  if (e.shiftKey || e.key.startsWith("Arrow")) setTimeout(showSelTip, 0);
+});
+function showSelTip() {
+  const ta = $("tpl");
+  const len = ta.selectionEnd - ta.selectionStart;
+  if (len > 0 && len < 20000) {
+    const r = getCaretPx(ta.selectionStart);
+    selTip.style.display = "block";
+    selTip.style.left = Math.max(8, r.x - 60) + "px";
+    selTip.style.top = (r.y - 34) + "px";
+    selTip.innerHTML = `已选 ${len} 字 <button id="try-sel">▶ 试运行选中</button>`;
+    document.getElementById("try-sel").onclick = runSelection;
+  } else selTip.style.display = "none";
+}
+async function runSelection() {
+  selTip.style.display = "none";
+  const ta = $("tpl");
+  const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+  setStatus("试运行选中片段…", "warn");
+  const r = await fetch("/api/parse-frag", {method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({fragment: sel, config: window._configText || ""})}).then(r => r.json());
+  renderParse(r, /*fragment*/ true);
+  setStatus(r.ok ? "片段试运行完成（结果只是该片段的产物）" : "片段运行失败", r.ok ? "ok" : "err");
+}
+
+// ═══════════ 文件加载 / 保存 ═══════════
+async function loadInto(path, target) {
+  const r = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
   const d = await r.json();
   if (d.error) { alert(d.error); return; }
   target.value = d.content;
-  target.dataset.name = name;
+  target.dataset.path = path;
+  syncHl();
 }
-
 async function init() {
+  const w = await fetch("/api/words").then(r => r.json());
+  WORDS = w.words || [];
   const ts = $("tpl-sel"), cs = $("cfg-sel");
   for (const f of TPL_FILES) ts.add(new Option(f, f));
   for (const f of CFG_FILES) cs.add(new Option(f, f));
-  await loadFile("tpl", TPL_FILES[0], $("tpl"));
-  await loadFile("cfg", CFG_FILES[0], $("tpl") && $("result") ? $("tpl") : $("tpl"));
+  await loadInto(TPL_FILES[0], $("tpl"));
   const r2 = await fetch("/api/file?path=" + encodeURIComponent(CFG_FILES[0]));
-  const d2 = await r2.json();
-  if (d2.content) window._configText = d2.content;
+  window._configText = (await r2.json()).content || "";
 }
-// 配置文本放全局（无配置编辑窗格，当前用 fixture）
+$("tpl-sel").addEventListener("change", e => loadInto(e.target.value, $("tpl")));
 $("cfg-sel").addEventListener("change", async e => {
-  const r = await fetch("/api/file?path=" + encodeURIComponent(e.target.value));
-  const d = await r.json();
+  const d = await (await fetch("/api/file?path=" + encodeURIComponent(e.target.value))).json();
   window._configText = d.content || "";
 });
+$("btn-save").addEventListener("click", async () => {
+  const ta = $("tpl");
+  const path = ta.dataset.path;
+  if (!confirm(`保存到 ${path}？（直接覆盖仓库模板文件）`)) return;
+  const r = await fetch("/api/save", {method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({path, content: ta.value})}).then(r => r.json());
+  setStatus(r.ok ? `已保存 ${path}` : "保存失败: " + r.error, r.ok ? "ok" : "err");
+});
 
-// ── lint + 解析 ──────────────────────────────────────
+// ═══════════ lint + 解析 ═══════════
 function setStatus(text, cls) {
-  $("status").innerHTML = text ? `<span class="badge ${cls}">${text}</span>` : "";
+  $("status").innerHTML = text ? `<span class="badge ${cls}">${esc(text)}</span>` : "";
 }
 $("btn-run").addEventListener("click", async () => {
   const btn = $("btn-run");
@@ -137,8 +324,14 @@ function renderLint(d) {
     ? `<span class="badge ok">通过</span>`
     : `<span class="badge err">${d.errors.length} 个错误</span>`;
   const parts = [];
-  for (const e of d.errors)  parts.push(`<div class="prob err">[错误] ${esc(e.message)}</div>`);
-  for (const w of d.warnings) parts.push(`<div class="prob warn">[${esc(w.level)}] ${esc(w.message)}</div>`);
+  for (const e of d.errors) {
+    const coll = e.coll ? `${e.coll}: ` : "";
+    parts.push(`<div class="prob err" data-goto="${esc(e.message)}">[错误] ${esc(coll)}${esc(e.message)}</div>`);
+  }
+  for (const w of d.warnings) {
+    const coll = w.coll ? `${w.coll}: ` : "";
+    parts.push(`<div class="prob ${w.level === "警告" ? "warn" : "info"}">[${esc(w.level)}] ${esc(coll)}${esc(w.message)}</div>`);
+  }
   if (d.tree.length) {
     parts.push('<div class="prob info">── 集合树 ──</div>');
     for (const c of d.tree) {
@@ -151,7 +344,7 @@ function renderLint(d) {
   list.innerHTML = parts.join("") || '<div class="prob ok">无问题</div>';
 }
 
-function renderParse(d) {
+function renderParse(d, fragment) {
   const el = $("result");
   if (!d.ok) {
     $("parse-badge").innerHTML = `<span class="badge err">解析失败</span>`;
@@ -159,8 +352,9 @@ function renderParse(d) {
     return;
   }
   const ts = d.traceSummary || {};
+  const frag = fragment ? `<span class="badge warn">片段</span>` : "";
   $("parse-badge").innerHTML =
-    `<span class="badge ok">成功</span> ` +
+    `<span class="badge ok">成功</span> ${frag} ` +
     `<span class="badge">${ts.hitLines ?? "-"} / ${ts.totalLines ?? "-"} 行命中</span>`;
   el.textContent = JSON.stringify(d.result, null, 2);
   window._lastParse = d;
@@ -174,11 +368,6 @@ $("btn-trace").addEventListener("click", () => {
   $("result").innerHTML =
     `<div class="trace"><table><tr><th>行号</th><th>命中集合</th><th>配置行</th></tr>${rows}</table></div>`;
 });
-
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, c =>
-    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-}
 
 init();
 </script>

@@ -17,6 +17,7 @@ API：
 import argparse
 import json
 import os
+import re
 import sys
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -101,6 +102,82 @@ def do_parse(template_text, config_text):
                              "hits": hits[:500], "resultBytes": size}}
 
 
+def do_parse_fragment(fragment_text, config_text):
+    """把选中片段包进临时上下文后试运行。
+
+    片段可能是：① 独立集合声明块（自带 start/rule）→ 原样解析
+    ② 接口内的零散规则行（无集合声明）→ 包一层 Interfaces 容器再跑
+    """
+    frag = fragment_text.strip()
+    if not frag:
+        return {"ok": False, "error": "片段为空", "result": None, "traceSummary": None}
+
+    has_decl = re.match(r"^[A-Z]\w*\s+type\(", frag) is not None
+    if has_decl:
+        template = frag
+    else:
+        # 零散规则行：包进一个无 start 的临时容器（栈底常驻层）
+        template = ("FragmentTest type(dict) desc(片段试运行临时容器)\n"
+                    "[rule]\n" + frag)
+
+    tpath = os.path.join(_HERE, "_live.cmdb")
+    cpath = os.path.join(_HERE, "_live_cfg.txt")
+    with open(tpath, "w", encoding="utf-8") as fh:
+        fh.write(template)
+    with open(cpath, "w", encoding="utf-8") as fh:
+        fh.write(config_text)
+    try:
+        colls = engine.parse_template(tpath)
+        trace = []
+        result = engine.run(colls, config_text.splitlines(), trace=trace)
+    except Exception as e:
+        return {"ok": False, "error": str(e), "result": None, "traceSummary": None,
+                "resolvedTemplate": template}
+    finally:
+        for p in (tpath, cpath):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+    hits = [{"line": no, "text": ln.strip()[:120], "coll": hit}
+            for no, ln, hit, _stk in trace if hit]
+    return {"ok": True, "error": None, "result": result,
+            "resolvedTemplate": template,
+            "traceSummary": {"totalLines": len(trace), "hitLines": len(hits),
+                             "hits": hits[:500], "resultBytes":
+                             len(json.dumps(result, ensure_ascii=False))}}
+
+
+def do_save(rel, content):
+    """保存模板到白名单目录（templates / tests/fixtures）。"""
+    p = _safe_path(rel)
+    if not p:
+        return {"ok": False, "error": "路径不在白名单目录"}
+    # 只允许 .cmdb / .txt
+    if not p.endswith((".cmdb", ".txt")):
+        return {"ok": False, "error": "只允许保存 .cmdb / .txt"}
+    # 保存前先 lint：有错误则拒绝落盘（防写坏生产模板）
+    tmp = p + ".autosave-check"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(content)
+    try:
+        colls = engine.parse_template(tmp)
+        problems = [x for x in engine.lint(colls) if x[0] == "错误"]
+    except Exception as e:
+        problems = [("错误", "", str(e))]
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+    if problems:
+        return {"ok": False,
+                "error": "lint 未通过，拒绝保存: " + "; ".join(x[2] for x in problems[:3])}
+    with open(p, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(content)
+    return {"ok": True, "path": rel, "bytes": len(content.encode("utf-8"))}
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="application/json; charset=utf-8"):
         data = body if isinstance(body, bytes) else body.encode("utf-8")
@@ -118,6 +195,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html"):
             with open(os.path.join(_HERE, "index.html"), "rb") as fh:
                 return self._send(200, fh.read(), "text/html; charset=utf-8")
+        if self.path.startswith("/api/words"):
+            with open(os.path.join(_HERE, "words.json"), encoding="utf-8") as fh:
+                return self._send(200, fh.read())
         if self.path.startswith("/api/file"):
             from urllib.parse import urlparse, parse_qs, unquote
             qs = parse_qs(urlparse(self.path).query)
@@ -141,6 +221,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(
                 do_parse(body.get("template", ""), body.get("config", "")),
                 ensure_ascii=False))
+        if self.path == "/api/parse-frag":
+            return self._send(200, json.dumps(
+                do_parse_fragment(body.get("fragment", ""), body.get("config", "")),
+                ensure_ascii=False))
+        if self.path == "/api/save":
+            return self._send(200, json.dumps(do_save(body.get("path", ""),
+                                                      body.get("content", "")),
+                                              ensure_ascii=False))
         return self._send(404, json.dumps({"error": "not found"}))
 
     def log_message(self, fmt, *args):  # 安静模式
