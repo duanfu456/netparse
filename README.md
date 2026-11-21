@@ -106,8 +106,18 @@ AdminStatus type(str) reg(up|down) desc(管理状态)
   不同缩进层出现时分进不同集合（如 `bas` 视图正文）
 - 规则尾部统一放宽 `(?:\s+.*)?\s*$`，避免命令尾巴吃掉整条匹配
 
-完整语法 + 15 个场景手册见 `docs/TEMPLATE-GUIDE.md`；
-2026-11 模板审查的实测数据与设计原则见其第 8 节。
+## 文档索引
+
+| 文档 | 给谁看 | 内容 |
+|---|---|---|
+| `docs/TEMPLATE-CHEATSHEET.md` | **写模板的人** | 速查版：集合/字段/规则/transform 声明对照表 + 常见坑 |
+| `docs/TEMPLATE-GUIDE.md` | 深入模板语法 | 完整语法 + 16 个场景手册 + 真实审查数据（第 8 节） |
+| `docs/CLI-GUIDE.md` | 命令行用户 | parse / lint / diff / readonly 全参数 + 管道约定 |
+| `docs/PYTHON-GUIDE.md` | 集成开发者 | 库调用两步模型、批量解析、脱敏控制、transform 警告 |
+| `docs/FINAL-plan.md` | 架构/评审 | 总方案：架构 / 实测数据 / 缺口 / 路线 |
+
+2026-11 模板审查的实测数据与设计原则见 TEMPLATE-GUIDE 第 8 节；
+transform（`func=`）语义见场景 16 与 `.devforge/spec/changes/transform-func/design.md`。
 
 ## 目录结构
 
