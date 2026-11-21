@@ -12,14 +12,9 @@ version: 1.0.0
 
 ## 0. 前置检查（首次执行前跑一次）
 
-本 skill 就在 **netparse 仓库内**（`<仓库根>/skills/netparse/`；`<仓库根>` = 本 SKILL.md
-向上两级，即克隆/拷贝仓库后的根目录）。三种执行方式按可用性选择：
-
-| 方式 | 适用 | 执行 |
-|---|---|---|
-| **exe**（首选，无需 Python） | 任何 Windows 机器 | `<仓库根>\dist\netparse.exe <子命令> ...` |
-| **源码**（有 Python ≥3.9） | 开发/调试 | `cd <仓库根> && python -m netparse <子命令> ...` |
-| **np.py 封装**（AI 用，输出全 JSON） | 本机有 Python ≥3.9 | `python skills/netparse/scripts/np.py ...` |
+本 skill 配套的执行程序是仓库里的 **`dist/netparse.exe`**（约 7MB，PyInstaller 单文件，
+Windows 直接跑，**无需安装 Python**）。`<仓库根>` = 本 SKILL.md 向上两级
+（即 `skills/netparse/` 的上一级）。
 
 前置检查（在仓库根目录）：
 
@@ -27,57 +22,26 @@ version: 1.0.0
 dist/netparse.exe --version     # 需输出 netparse 0.3.0+
 ```
 
-**分享 / 安装**：把整个仓库文件夹给对方即可。要装进 WorkBuddy 等 AI 工具时，
-把 `skills/netparse/` 文件夹拷到其 skills 目录（WorkBuddy 是
-`%USERPROFILE%\.workbuddy\skills\`）；SKILL.md 里的 `<仓库根>` 按对方机器的
-实际仓库位置理解。
-
 | 现象 | 处理 |
 | --- | --- |
-| exe 不存在 | 用源码方式；或重新打包：`pyinstaller --onefile --name netparse --paths src packaging/entry.py` |
-| `No module named netparse` | cd 到仓库目录用源码方式 |
-| 中文乱码 | exe 已内置 UTF-8 强制；源码方式设 `PYTHONIOENCODING=utf-8` |
-| GitHub 拉取后 templates/ 为空 | 模板在仓库 `templates/` 目录，确认拉全 |
+| `dist/netparse.exe` 不存在 | 找仓库维护者要 exe；或在本机（有 Python）重新打包：`pyinstaller --onefile --name netparse --paths src packaging/entry.py` |
+| 中文乱码 | exe 已内置 UTF-8 强制输出，重定向到文件也是 UTF-8；若终端显示乱码是终端自身编码问题 |
+| 杀软拦截 exe | 加入白名单；如企业杀软持续误报，找维护者要 embeddable 绿色包替代方案 |
 
----
+**分发**：把整个仓库文件夹（含 `dist/netparse.exe` 与 `templates/`）给对方即可，
+对方零安装。要装进 WorkBuddy 等 AI 工具时，把 `skills/netparse/` 文件夹拷到其
+skills 目录（WorkBuddy 是 `%USERPROFILE%\.workbuddy\skills\`）。
 
-## 0.5 首选入口：`scripts/np.py`（AI 友好封装，输出全是 JSON）
+## 0.5 AI 调用约定（输出读取）
 
-**给 AI 用时优先用这个**——单入口、全 JSON 输出、错误也结构化（不用解析人类文本）：
+exe 的输出对 AI 友好，按约定读取即可：
 
-```bash
-# 脚本自动向上找仓库根（src/），无需配置；示例用仓库相对路径
-python skills/netparse/scripts/np.py parse  templates/huawei-vrp.cmdb <配置文件|文件夹> [输出]  # 解析
-python skills/netparse/scripts/np.py lint   templates/huawei-vrp.cmdb                          # 体检 + 集合树
-python skills/netparse/scripts/np.py fields templates/huawei-vrp.cmdb                          # 全部字段清单
-python skills/netparse/scripts/np.py info   templates/huawei-vrp.cmdb <配置文件>                # 摘要
-
-- 输出：`{"ok": true/false, ...}`，parse 带 `result`（单文件）或 `results`（批量）+ `lint`
-- 批量 + 输出目录时自动**每文件一个 JSON** 落盘，`written` 数组列出文件名
-- 路径注意：给脚本传**真实 Windows 路径**（`C://...`），不要传 git-bash 的 `/tmp/...`（Windows Python 不认）
-- 内部直接调引擎（`src/`），不依赖 exe；仓库不存在 exe 也能跑
-
-## 0.6 执行方式详解：exe 与源码 CLI
-
-**exe**（`<仓库根>\dist\netparse.exe`，约 7MB，PyInstaller 单文件）：
-
-- 目标机器**无需 Python**，拷到任何目录直接跑
-- stdout/stderr 已强制 UTF-8（中文 JSON 重定向到文件不会乱码）
-- 模板是**外置的**：`.cmdb` 与 `transforms_*.py` 放在 exe 旁的 `templates\` 文件夹，
-  **改模板不用重新打包**；只有引擎逻辑改动才需要重新打包（见 0 节前置检查的重打包命令）
-- 分发：把 `netparse.exe` + `templates\` 整个文件夹给对方即可
-
-**源码 CLI**（`cd <仓库根> && python -m netparse ...`）：
-
-- 需要 Python ≥3.9；netparse 零第三方依赖，装不装包都行（装了有 `netparse` 命令）
-- 功能与 exe 完全一致（同一份代码），开发调试用这种方式改完即跑
-- 引擎可直接当 Python 库 import（见 docs/PYTHON-GUIDE.md）
-
-| 场景 | 用哪个 |
-|---|---|
-| 给别人/别的机器跑 | exe |
-| 本机开发调试、改模板、改引擎 | 源码 CLI |
-| AI 脚本自动化 | `scripts/np.py`（内部走源码引擎，见 0.5 节） |
+- `parse ... --json` → **stdout 是纯 JSON**（lint/统计走 stderr），`2>/dev/null` 后
+  直接 `json.load`，顶层 key 就是集合名
+- `parse <模板> <配置文件夹> <输出目录>` → 每个配置文件一个同名 `.json` 落到输出目录
+  （子目录结构保留），逐文件 `json.load` 入库
+- `lint --json` → JSON 问题列表（`level` ∈ 错误/警告/提示）
+- 退出码：0 = 成功；非 0 = 有错误（lint 有错误 / 批量有失败文件）
 
 ## 1. 核心概念（30 秒）
 
@@ -154,7 +118,7 @@ $EXE lint templates/huawei-vrp.cmdb --strict      # 有警告也非零退出（C
 | 输出里密码是 `******` | 正常，脱敏生效；确需关形态兜底加 `--no-mask-heuristic` |
 | 模板路径不存在 | 模板放任意目录都可以，检查路径拼写 |
 
-**管道约定**：`--json` 时 stdout 是纯 JSON，lint/统计走 stderr → `2>/dev/null` 后可安全接 `jq`/`python -m json.tool`。
+**管道约定**：`--json` 时 stdout 是纯 JSON，lint/统计走 stderr → `2>/dev/null` 后可安全接 `jq`（有 jq 的话）或直接重定向落文件。
 
 ## 3. 现有模板与字段（写解析任务前先查）
 
@@ -225,7 +189,20 @@ $EXE parse templates/huawei-vrp.cmdb <配置文件夹> <输出目录>
 3. 字段是不是 `func=` 派生 → 检查函数与被依赖字段（如 iface_type 依赖 Name）
 4. 缩进锚定：命令前导空格数与 `indent(n)` / `^ {n}` 是否一致
 
-## 6. 用户没有 Python 环境时
+## 6. 交付包清单（给别人时发整个仓库文件夹）
 
-exe 是单文件（~7MB），把 `<仓库根>\dist\netparse.exe` 和 `templates\` 文件夹
-一起拷给对方即可；对方机器无需 Python。transform 的 `.py` 文件也是外置的，可热改。
+```text
+netparse/
+├─ dist/netparse.exe        ← 程序本体（唯一必需）
+├─ templates/                ← 模板 + transforms（必需；可热改不用重打包）
+│  ├─ huawei-vrp.cmdb
+│  ├─ transforms_huawei.py
+│  └─ zte-m6000.cmdb
+├─ docs/                     ← 深度文档（可选）
+├─ skills/netparse/          ← 本 skill（给 AI 工具用）
+└─ README.md
+```
+
+对方拿到后：把 `skills/netparse/` 拷进 AI 工具的 skills 目录（WorkBuddy 是
+`%USERPROFILE%\.workbuddy\skills\`），其余留在原地——AI 通过 `<仓库根>\dist\netparse.exe`
+调用。无 Python 依赖。
