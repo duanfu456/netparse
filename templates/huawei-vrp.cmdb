@@ -111,9 +111,11 @@ Pim           type(dict) desc(PIM)
   HelloInterval type(int) reg(\d+) desc(Hello 间隔)
 Igmp          type(dict) desc(IGMP)
   Enable     type(bool) desc(IGMP 使能)
+  StaticGroup type(str) reg(\S+) desc(静态组)
   Version    type(int) reg(\d+) desc(版本)
 Isis          type(dict) desc(ISIS)
   Enable        type(int) reg(\d+) desc(进程号)
+  HelloInterval type(int) reg(\d+) desc(Hello 间隔秒)
   CircuitType   type(str) reg(\S+) desc(电路类型)
   CircuitLevel  type(str) reg(\S+) desc(电路层级)
   Cost          type(int) reg(\d+) desc(开销)
@@ -171,9 +173,8 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
 ^ {1}shutdown\s*$               -> AdminStatus=down
 ^ {1}undo dcn\s*$               -> Dcn=false
 ^ {1}dcn\s*$                    -> Dcn=true
-^ {1}vlan-type\s+${VlanType}\s+(?P<Dot1qVlan>\d+)(?:\s+.*)?\s*$
-^ {1}user-vlan\s+(?P<Start>\d+)(?:\s+(?P<End>\d+))?(?:\s+qinq\s+(?P<QinQOuter>\d+)(?:\s+(?P<QinQInner>\d+))?)?(?:\s+.*)?\s*$
-       -> UserVlan{Start,End,QinQOuter,QinQInner}
+^ {1}vlan-type\s+${VlanType}\s+${Dot1qVlan}(?:\s+.*)?\s*$
+^ {1}user-vlan\s+${UserVlan.Start}(?:\s+${UserVlan.End})?(?:\s+qinq\s+${UserVlan.QinQOuter}(?:\s+${UserVlan.QinQInner})?)?(?:\s+.*)?\s*$
 ^ {1}carrier down-hold-time\s+${CarrierDownHoldTime}(?:\s+.*)?\s*$
 ^ {1}ip binding vpn-instance\s+${IpBindingVpn}(?:\s+.*)?\s*$
 ^ {1}ip urpf\s+${IpUrpf}(?:\s+.*)?\s*$
@@ -185,10 +186,9 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
 ^ {1}lacp timeout\s+${LacpTimeout}(?:\s+.*)?\s*$
 ^ {1}statistic enable\s*$        -> Statistic.Enable=true
 ^ {1}statistic mode\s+${Statistic.Mode}(?:\s+.*)?\s*$
-^ {1}qos car cir\s+${QosCar.Cir}(?:\s+pir\s+(?P<QosCar.Pir>\d+))?(?:\s+cbs\s+(?P<QosCar.Cbs>\d+))?(?:\s+pbs\s+(?P<QosCar.Pbs>\d+))?(?:\s+.*)?\s*$
+^ {1}qos car cir\s+${QosCar.Cir}(?:\s+pir\s+${QosCar.Pir})?(?:\s+cbs\s+${QosCar.Cbs})?(?:\s+pbs\s+${QosCar.Pbs})?(?:\s+.*)?\s*$
 ^ {1}qos-profile\s+${QosProfile}(?:\s+.*)?\s*$
-^ {1}traffic-policy\s+(?P<Name>\S+)\s+(?P<Direction>\S+)(?:\s+.*)?\s*$
-       -> TrafficPolicy{Name,Direction}
+^ {1}traffic-policy\s+${TrafficPolicy.Name}\s+${TrafficPolicy.Direction}(?:\s+.*)?\s*$
 ^ {1}pim\s+${Pim.Mode}(?:\s+.*)?\s*$
 ^ {1}pim hello-option dr-priority\s+${Pim.DrPriority}(?:\s+.*)?\s*$
 ^ {1}igmp enable\s*$             -> Igmp.Enable=true
@@ -198,18 +198,18 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
 ^ {1}isis cost\s+${Isis.Cost}(?:\s+.*)?\s*$
 ^ {1}isis ipv6 enable(?:\s+\d+)?(?:\s+.*)?\s*$   -> Isis.Ipv6Enable=true
 ^ {1}isis ldp-sync\s*$           -> Isis.LdpSync=true
-^ {1}isis timer\s+(?P<Isis.HelloInterval>\d+)(?:\s+.*)?\s*$
-^ {1}default-password-template\s+(?P<DefaultPasswordTemplate>\S+)(?:\s+.*)?\s*$
-^ {1}dhcp select\s+(?P<DhcpSelect>\S+)(?:\s+.*)?\s*$
-^ {1}l2 binding\s+(?P<L2Binding>.+?)\s*$
-^ {1}trust upstream\s+(?P<TrustUpstream>.+?)\s*$
+^ {1}isis timer\s+${Isis.HelloInterval}(?:\s+.*)?\s*$
+^ {1}default-password-template\s+${DefaultPasswordTemplate}(?:\s+.*)?\s*$
+^ {1}dhcp select\s+${DhcpSelect}(?:\s+.*)?\s*$
+^ {1}l2 binding\s+${L2Binding}\s*$
+^ {1}trust upstream\s+${TrustUpstream}\s*$
 ^ {1}mpls\s*$                    -> Mpls=true
 ^ {1}mpls ldp\s*$                -> MplsLdp=true
-^ {1}mpls l2vc\s+(?P<MplsL2vc>.+?)\s*$
-^ {1}ipv6 mtu\s+(?P<Ipv6Mtu>\d+)(?:\s+.*)?\s*$
-^ {1}igmp static-group\s+(?P<Igmp.StaticGroup>\S+)(?:\s+.*)?\s*$
+^ {1}mpls l2vc\s+${MplsL2vc}\s*$
+^ {1}ipv6 mtu\s+${Ipv6Mtu}(?:\s+.*)?\s*$
+^ {1}igmp static-group\s+${Igmp.StaticGroup}(?:\s+.*)?\s*$
 ^ {1}control-flap\s*$            -> ControlFlap=true
-^ {1}ospf authentication-mode\s+(?P<OspfAuthMode>.+?)\s*$
+^ {1}ospf authentication-mode\s+${OspfAuthMode}\s*$
 ^ {1}vrrp vrid\s+(?P<Vrid>\d+)\s+priority\s+(?P<Priority>\d+)(?:\s+.*)?\s*$
        -> Vrrp{Vrid,Priority}
 ^ {1}vrrp vrid\s+(?P<Vrid>\d+)\s+virtual-ip\s+(?P<Address>\S+)(?:\s+.*)?\s*$
@@ -223,26 +223,24 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
 # `ip relay address` 缩进 1，只有这一种形态（165 次）。
 # 它曾挂在 IpAddress 集合下，靠栈里残留的 IpAddress 帧顺带命中；
 # 接口里没有 `ip address` 时 IpAddress 帧不存在 → 漏掉（实测 6 行）。
-^ {1}ip relay address\s+(?P<IpRelayAddress>\d{1,3}(?:\.\d{1,3}){3})(?:\s+.*)?\s*$
-       -> IpRelayAddress
+^ {1}ip relay address\s+${IpRelayAddress}(?:\s+.*)?\s*$
 # `nas logic-port` / `nas logic-ip` 在缩进 1（接口本级）与缩进 2（bas 视图）都出现，
 # 两个缩进分属 Interfaces 与 Bas 两个集合，规则各写一份。
-^ {1}nas logic-port\s+(?P<NasLogicInterface>.+?)\s*$
+^ {1}nas logic-port\s+${NasLogicInterface}\s*$
        -> NasLogicInterface
-^ {1}nas logic-ip\s+(?P<NasLogicAddress>\d{1,3}(?:\.\d{1,3}){3})(?:\s+.*)?\s*$
-       -> NasLogicAddress
-^ {1}port-observing\s+(?P<PortObserving>\S+)(?:\s+.*)?\s*$
-^ {1}isis ipv6 cost\s+(?P<Isis.Ipv6Cost>\d+)(?:\s+level-\d+)?(?:\s+.*)?\s*$
-^ {1}isis timer ldp-sync\s+(?P<Isis.LdpSyncTimer>\S+)(?:\s+.*)?\s*$
-^ {1}isis authentication-mode\s+(?P<Isis.AuthMode>\S+)(?:\s+.*)?\s*$
-^ {1}mpls ldp timer\s+(?P<MplsLdpTimer>\S+)(?:\s+.*)?\s*$
-^ {1}ospf network-type\s+(?P<OspfNetworkType>\S+)(?:\s+.*)?\s*$
-^ {1}ospf cost\s+(?P<OspfCost>\d+)(?:\s+.*)?\s*$
-^ {1}ospf timer\s+(?P<OspfTimer>\S+)(?:\s+.*)?\s*$
-^ {1}port-mirroring\s+(?P<PortMirroring>\S+)(?:\s+.*)?\s*$
-^ {1}negotiation\s+(?P<Negotiation>\S+)(?:\s+.*)?\s*$
-^ {1}forward-mode\s+(?P<ForwardMode>\S+)(?:\s+.*)?\s*$
-^ {1}mac-address\s+(?P<MacAddress>[\w-]+)(?:\s+.*)?\s*$
+^ {1}nas logic-ip\s+${NasLogicAddress}(?:\s+.*)?\s*$
+^ {1}port-observing\s+${PortObserving}(?:\s+.*)?\s*$
+^ {1}isis ipv6 cost\s+${Isis.Ipv6Cost}(?:\s+level-\d+)?(?:\s+.*)?\s*$
+^ {1}isis timer ldp-sync\s+${Isis.LdpSyncTimer}(?:\s+.*)?\s*$
+^ {1}isis authentication-mode\s+${Isis.AuthMode}(?:\s+.*)?\s*$
+^ {1}mpls ldp timer\s+${MplsLdpTimer}(?:\s+.*)?\s*$
+^ {1}ospf network-type\s+${OspfNetworkType}(?:\s+.*)?\s*$
+^ {1}ospf cost\s+${OspfCost}(?:\s+.*)?\s*$
+^ {1}ospf timer\s+${OspfTimer}(?:\s+.*)?\s*$
+^ {1}port-mirroring\s+${PortMirroring}(?:\s+.*)?\s*$
+^ {1}negotiation\s+${Negotiation}(?:\s+.*)?\s*$
+^ {1}forward-mode\s+${ForwardMode}(?:\s+.*)?\s*$
+^ {1}mac-address\s+${MacAddress}(?:\s+.*)?\s*$
 
   # ── 接口 IP（子层）────────────────────────────────
   # 不声明 end：IpAddress 只承载 `ip address` / `ipv6 address` 两种行，
@@ -257,7 +255,7 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
   Mode    type(str) reg(\S+) desc(自动地址模式)
   AddressType type(str) reg(sub) desc(地址类型)
   [rule]
-  ^ {1}ip address\s+${Address}\s+${Mask}(?:\s+(?P<AddressType>sub))?(?:\s+.*)?\s*$   -> Family="ipv4"
+  ^ {1}ip address\s+${Address}\s+${Mask}(?:\s+${AddressType})?(?:\s+.*)?\s*$   -> Family="ipv4"
   ^ {1}ipv6 address\s+${Address}/${Mask}(?:\s+.*)?\s*$                              -> Family="ipv6"
   ^ {1}ipv6 address\s+auto\s+${Mode}(?:\s+.*)?\s*$                                  -> Address="auto",Family="ipv6"
   ^ {1}ip relay address\s+${Address}(?:\s+.*)?\s*$                                  -> Family="ipv4",Mask=""
@@ -296,10 +294,10 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
         -> AccessType,PreAuthDomain
   ^ {2}access-type\s+${AccessType}(?:\s+.*)?\s*$
   ^ {2}authentication-method\s+${Method}(?:\s+.*)?\s*$
-  ^ {2}nas logic-ip\s+(?P<Address>\S+)(?:\s+.*)?\s*$      -> NasLogicIp{Address}
-  ^ {2}nas logic-port\s+(?P<Interface>.+?)\s*$             -> NasLogicPort{Interface}
+  ^ {2}nas logic-ip\s+${NasLogicIp.Address}(?:\s+.*)?\s*$
+  ^ {2}nas logic-port\s+${NasLogicPort.Interface}\s*$
   ^ {2}client-option82\s+${Option82}\s*$
-  ^ {2}access-delay\s+(?P<AccessDelay>\d+)(?:\s+(?P<DelayMode>\S+))?(?:\s+.*)?\s*$
+  ^ {2}access-delay\s+${AccessDelay}(?:\s+${DelayMode})?(?:\s+.*)?\s*$
   ^ {2}arp-trigger\s*$        -> ArpTrigger=true
   ^ {2}ip-trigger\s*$         -> IpTrigger=true
   ^ {2}arp-proxy\s*$          -> ArpProxy=true
@@ -307,8 +305,8 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
   ^ {2}vpn-instance\s+${VpnInstance}(?:\s+.*)?\s*$
   # `default-password-template` 只在 bas 正文出现（缩进 2，共 2,406 次，
   # 仅 iptv / ottx 两个值）；接口本级的同名命令不存在，故只写这一份。
-  ^ {2}default-password-template\s+(?P<DefaultPasswordTemplate>\S+)(?:\s+.*)?\s*$
-  ^ {2}nas-port-type\s+(?P<NasPortType>\S+)(?:\s+.*)?\s*$
+  ^ {2}default-password-template\s+${DefaultPasswordTemplate}(?:\s+.*)?\s*$
+  ^ {2}nas-port-type\s+${NasPortType}(?:\s+.*)?\s*$
 
 # ── 静态路由 ─────────────────────────────────────────
 RouteStatics type(list) start(^ip route-static) desc(静态路由)
@@ -387,8 +385,7 @@ Description        type(str) reg(.+) desc(描述)
   [rule]
   ^ {2}route-distinguisher\s+${RouteDistinguisher}(?:\s+.*)?\s*$
   ^ {2}apply-label\s+${ApplyLabel}(?:\s+.*)?\s*$
-  ^ {2}vpn-target\s+(?P<Rd>\S+)\s+(?P<Direction>\S+)(?:\s+.*)?\s*$
-        -> VpnTargets{Rd,Direction}
+  ^ {2}vpn-target\s+${VpnTargets.Rd}\s+${VpnTargets.Direction}(?:\s+.*)?\s*$
 
   VpnIpv6Family type(dict) start(^ {1}ipv6-family\s*$) indent(2) desc(IPv6 地址族)
   [value]
@@ -400,8 +397,7 @@ Description        type(str) reg(.+) desc(描述)
   [rule]
   ^ {2}route-distinguisher\s+${RouteDistinguisher}(?:\s+.*)?\s*$
   ^ {2}apply-label\s+${ApplyLabel}(?:\s+.*)?\s*$
-  ^ {2}vpn-target\s+(?P<Rd>\S+)\s+(?P<Direction>\S+)(?:\s+.*)?\s*$
-        -> VpnTargets{Rd,Direction}
+  ^ {2}vpn-target\s+${VpnTargets.Rd}\s+${VpnTargets.Direction}(?:\s+.*)?\s*$
 
 # ── BGP ──────────────────────────────────────────────
 # 注意 `peer` 有两种语义，必须分开：
@@ -430,7 +426,7 @@ Networks       type(list) desc(宣告网段)
 ^ {1}router-id\s+${RouterId}(?:\s+.*)?\s*$
 ^ {1}private-4-byte-as disable\s*$  -> Private4ByteAs=false
 ^ {1}private-4-byte-as enable\s*$   -> Private4ByteAs=true
-^ {2}network\s+(?P<Prefix>\S+)\s+(?P<Mask>\S+)(?:\s+.*)?\s*$
+^ {2}network\s+${Networks.Prefix}\s+${Networks.Mask}(?:\s+.*)?\s*$
        -> Networks{Prefix,Mask}
 
   # ── BGP 邻居组（子层：同一个组的 server 端多行按 Key 合并）────
