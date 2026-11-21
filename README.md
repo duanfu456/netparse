@@ -43,6 +43,25 @@ result = run(colls, lines)
 masking.CONFIG.reset()               # 复位
 ```
 
+### 模板里的字段 transform（`func=`）
+
+模板可以带自己的 Python 函数（`[python]` 内联块或 `[python_file]` 外部文件，
+路径相对模板自身），对任意字段做派生/规范化：
+
+```text
+[python_file]
+transforms_huawei.py          ← 与模板同目录，多模板可共用
+
+[value]
+Name type(str) reg(\S+) option(Key)
+Type type(str) func=iface_type desc(接口类型)      ← 从 Name 派生
+[rule]
+...
+```
+
+函数签名 `def f(value, record=None)`；返回 `None` 表示字段留空；
+异常被引擎捕获并记 lint 警告。完整语义见 `TEMPLATE-GUIDE.md` 场景 16。
+
 ### 作为命令行
 
 ```bash
@@ -109,7 +128,7 @@ templates/             模板（华为 VRP 15 集合 / 中兴 M6000 / Nokia SROS
 tests/                 单元测试与 fixture 回归
 ```
 
-## 当前状态（2026-11-20）
+## 当前状态（2026-11-21）
 
 | 指标 | 数值 |
 |---|---|
@@ -117,7 +136,9 @@ tests/                 单元测试与 fixture 回归
 | 中兴模板 | `zte-m6000.cmdb`（分区根命令模型），64 台实测 0 失败 / 0 密文泄漏 |
 | ACL 规则 | 14,723 / 14,723 全解析 |
 | 块数守恒 | 6 类块 × 20 台逐台核对全部一致 |
-| 脱敏 | 引擎层 `type(secret)` + 密文形态兜底，全量 8440 文件零明文 |
+| 脱敏 | 引擎层 `type(secret)` + 密文形态兜底（华为 + 中兴密文形态），全量零明文 |
+| transform | 字段级 `func=` + `[python]`/`[python_file]` 双段；接口类型 0% → **100%**（21,427 接口） |
+| 编辑器 | 本地 Web（`python editor/server.py`）：lint 实时检查、`${` 字段补全、集合折叠、选中试运行、保存守门 |
 | 台账 19 列 | 8/19 完整对齐，其余列的模板规则已补，**台账口径复测未跑** |
 
 ## 兼容性

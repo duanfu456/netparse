@@ -2,11 +2,12 @@
 
 > **一句话**：把网络设备**配置文件**解析成结构化 JSON，产出**接口台账**与**端口状态**两张表。
 > **定位**：只覆盖**配置面**（设备上写下来的东西），不覆盖硬件/运行态——那些交给 NETCONF / SNMP / 命令输出那条线。
-> **状态**：语法与语义已定稿；引擎已规整为 Python 库；**模板只交付 1 个厂商**，字段覆盖 9/19 列；
-> 接口块内覆盖率 **100%**（318 台 / 166 万行实测，2026-11-20）。
+> **状态**：语法与语义已定稿；引擎已规整为 Python 库；华为模板已交付（接口块内覆盖率 **100%**，
+> 318 台实测）+ 中兴模板已交付（64 台实测）+ 字段级 transform（`func=`，接口类型已实战 100%）。
 
 | 版本 | 变更 |
 |---|---|
+| v5（2026-11-21） | **transform 机制落地**：字段级 `func=` + `[python]`/`[python_file]` 双段（相对模板路径，自包含分发）；签名 `def f(value, record=None)`；双执行路径（捕获值 / commit 派生补算）；lint 五条新检查；华为模板接入 `iface_type`——接口类型 0% → **100%**（21,427 接口）。另：编辑器（高亮/补全/折叠/试运行/保存守门）、CLI 尾部放宽自动补齐。详见 `TEMPLATE-GUIDE.md` 场景 16 与 `.devforge/spec/changes/transform-func/design.md` |
 | v4（2026-11-20） | 按纯缩进模型重写华为模板（接口块内覆盖率 30.8% → **100%**）；引擎新增 `indent(n)` / `end_indent(n)`（均 opt-in）；修 6 个 bug（5 引擎 + 1 模板侧）；去掉 7 处 `default` 造假。详见 `TEMPLATE-GUIDE.md` 第 8 节 |
 | v3 | 修正 12 处文档与现状不符；澄清「作用域与文件排版无关」；确定真实交付物与覆盖边界；补与现成方案的对比；路线重排为三批次 + 两个决定性实验 |
 | v2 | Key / Required 移到字段级 `option(...)`；`->` 目标默认落当前层；`${A.B}` 嵌套路径可用；类型转换 / default / Required 校验 / 复合键生效 |
@@ -567,7 +568,7 @@ NokiaAddresses 94 / 103、NokiaPorts 43 / 598（`port` 大部分不在 interface
 | **lint：子集合无 start** | 高 | 现在静默 0 条且不报错 |
 | **lint：未知段头** | 高 | `[ignore]` 等未知段头静默跳过且不重置 mode → 幽灵字段 / 幽灵集合 |
 | **lint：命令覆盖报告产品化** | 高 | "未覆盖行 → 定位到哪个命令族"是逐行可追溯的失败定位 |
-| **transform / 派生字段** | 高 | 接口类型推断、`eth-trunk 42`→`Eth-Trunk42`、NQA 主键统一 |
+| ~~transform / 派生字段~~ | 高 | **✅ 已完成**（2026-11-21，`[python]`/`[python_file]`/`func=`，见 TEMPLATE-GUIDE 场景 16）；接口类型已实战（21427 接口 100%）。NQA 主键统一待用 record 派生实现 |
 | **「按名引用 / join」能力** | 高 | qos-profile 被接口引用、路由按接口反查 |
 | **测试基建**（`.raw`+`.yml` 样例库 + 自动断言 + git） | 中 | 回归基线 14 条 vs 生产 627 万接口，差 5 个数量级 |
 | **增量解析** | — | **建议砍**：8440 文件全量跑 490 秒 = 17 文件/秒，无性能压力 |
@@ -722,7 +723,7 @@ L1=68010 / L2=246 处被遮蔽，diff 报告零明文（`%^%#` 残留 0）。
 
 | 问题 | 说明 |
 |---|---|
-| **CI 主键的派生** | 华为 `nqa twamp-light` 与 `nqa test-instance <name> <id>` 标识方式不同，需要 transform 才能得到统一的 CI 主键 |
+| **CI 主键的派生** | 华为 `nqa twamp-light` 与 `nqa test-instance <name> <id>` 标识方式不同——transform 机制已就绪（`func=nqa_key`，`record` 参数可取 InstanceId），待写具体函数 |
 | **资产层复用 vs 重建** | 建议复用既有 `build_excel.py`（21KB 业务规则已投产），但要先把 netparse 输出形状对齐它的 schema |
 | **「按名引用 / join」放哪一层** | qos-profile 被接口引用、路由按接口反查——引擎层还是资产层？建议资产层 |
 | **Nokia `port` 的作用域** | `inherit=` 是"上次见到"不是"所属"，需要新的作用域惯用法 |
@@ -815,8 +816,12 @@ netparse/                      ← 已规整为 Python 库（pyproject.toml，�
 │     ├─ diff.py            ← netparse diff（19 列三栏）
 │     ├─ route_forms.py     ← netparse route-forms
 │     └─ readonly.py        ← netparse readonly
+├─ editor/                  ← 模板 Web 编辑器（python editor/server.py，端口 8765）
+│  ├─ server.py            ← 零依赖 http 服务：/api/lint /api/parse /api/parse-frag /api/save
+│  └─ index.html           ← 三栏 UI：高亮编辑 + lint 面板 + 解析结果/命中明细
 ├─ templates/
 │  ├─ huawei-vrp.cmdb      ← 华为 VRP，15 个集合（8 个子集合）★ 交付模板（318 台验证）
+│  ├─ transforms_huawei.py ← 华为字段 transform（iface_type 等，[python_file] 加载）
 │  ├─ zte-m6000.cmdb       ← 中兴 M6000，分区根命令模型（64 台验证，2026-11-21）
 │  └─ nokia-sros.cmdb      ← Nokia SR OS，1 集合 + 2 子集合（实验用，未完成）
 ├─ tests/
