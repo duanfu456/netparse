@@ -6,7 +6,8 @@
       "CarrierDownHoldTime": 200,
       "Description": "TO-[SNANK-PC-CMNET-RT01-NE5KE]-GE4/0/0=1*10GE",
       "AdminStatus": "up",
-      "Dcn": false
+      "Dcn": false,
+      "Type": "以太光口"
     },
     {
       "Name": "GigabitEthernet1/0/1",
@@ -14,7 +15,8 @@
       "Statistic": {
         "Enable": true,
         "Mode": "forward"
-      }
+      },
+      "Type": "以太光口"
     },
     {
       "Name": "Eth-Trunk1",
@@ -43,13 +45,15 @@
           "Family": "ipv6"
         }
       ],
-      "AdminStatus": "up"
+      "AdminStatus": "up",
+      "Type": "链路聚合"
     },
     {
       "Name": "GigabitEthernet1/0/2",
       "Description": "TO-[SNANK-MA-CMNET-NHXL-TaoYuanXiaoQu-OLT]-GE1/0/0=1*GE",
       "AdminStatus": "up",
-      "EthTrunk": "Eth-Trunk1"
+      "EthTrunk": "Eth-Trunk1",
+      "Type": "以太光口"
     }
   ],
   "RouteStatics": [
