@@ -71,7 +71,14 @@ _HIGH_ENTROPY = re.compile(
     rf"(?={_B64}*[a-z])(?={_B64}*[A-Z])(?={_B64}*[0-9]){_B64}{{24,}}")
 
 #: 密文形态正则列表。命中任一即视为凭据（L2 兜底）。
-SECRET_SHAPE_PATTERNS = [_HUAWEI_CIPHER, _HIGH_ENTROPY]
+# ③ 中兴 M6000 密文形态（2026-11-21 实测 64 台语料）：
+#    password encrypted *21*<base64≥20>   （system-user 段，*NN* 前缀）
+#    password sealed   *31*<base64≥20>    （ldp neighbor / snmp community）
+#    password encrypted $5$<salt>$<hash>  （irreversible，SHA-crypt 形态）
+#    ⚠️ *NN* 后至少 20 个 base64 字符：避免把 "*21*short" 这类普通串误杀。
+_ZX_STAR_CIPHER = re.compile(r"\*\d{1,3}\*[A-Za-z0-9+/=]{20,}")
+_ZX_SHA_CRYPT = re.compile(r"\$\d\$[A-Za-z0-9./]{1,16}\$[A-Za-z0-9./]{20,}")
+SECRET_SHAPE_PATTERNS = [_HUAWEI_CIPHER, _HIGH_ENTROPY, _ZX_STAR_CIPHER, _ZX_SHA_CRYPT]
 
 
 @lru_cache(maxsize=32768)
