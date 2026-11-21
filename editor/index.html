@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>netparse 模板编辑器</title>
+<style>
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --border: #ddd; --fg: #1a1a1a;
+    --muted: #888; --accent: #0969da; --err: #cf222e; --warn: #9a6700;
+    --ok: #1a7f37; --mono: Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 14px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif; height: 100vh;
+         display: flex; flex-direction: column; }
+  header { padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+           display: flex; gap: 12px; align-items: center; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header select, header button { font: inherit; padding: 4px 10px; }
+  header button { background: var(--accent); color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+  header button:disabled { background: #99c; cursor: wait; }
+  #status { margin-left: auto; font-size: 12px; color: var(--muted); }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; padding: 8px; min-height: 0; }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+            display: flex; flex-direction: column; min-height: 0; }
+  section h2 { font-size: 12px; margin: 0; padding: 6px 10px; color: var(--muted);
+               border-bottom: 1px solid var(--border); font-weight: 600; }
+  textarea { flex: 1; border: 0; resize: none; padding: 10px; font: 13px/1.5 var(--mono);
+             outline: none; white-space: pre; overflow: auto; tab-size: 4; }
+  #pane-result pre { flex: 1; margin: 0; padding: 10px; font: 12px/1.45 var(--mono);
+                     overflow: auto; white-space: pre; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+  .badge.ok   { background: #dafbe1; color: var(--ok); }
+  .badge.err  { background: #ffebe9; color: var(--err); }
+  .badge.warn { background: #fff8c5; color: var(--warn); }
+  #pane-lint .list { flex: 1; overflow: auto; padding: 8px; }
+  .prob { padding: 4px 8px; margin-bottom: 4px; border-radius: 4px; font-size: 12px;
+          font-family: var(--mono); white-space: pre-wrap; word-break: break-all; }
+  .prob.err  { background: #ffebe9; color: var(--err); }
+  .prob.warn { background: #fff8c5; color: var(--warn); }
+  .prob.info { background: #ddf4ff; color: var(--accent); }
+  .tree { flex: 1; overflow: auto; padding: 8px; font-size: 12px; }
+  .tree .coll { padding: 2px 6px; cursor: default; border-radius: 3px; }
+  .tree .coll.sub { margin-left: 16px; color: #555; }
+  .tree .coll b { color: var(--accent); }
+  .tree .meta { color: var(--muted); font-family: var(--mono); }
+  .trace { flex: 1; overflow: auto; font-size: 12px; }
+  .trace table { width: 100%; border-collapse: collapse; }
+  .trace td, .trace th { padding: 2px 6px; border-bottom: 1px solid var(--border); text-align: left; }
+  .trace th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; }
+  .trace td.c { color: var(--accent); font-family: var(--mono); }
+  .trace td.n { color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>netparse 模板编辑器</h1>
+  <label>模板 <select id="tpl-sel"></select></label>
+  <label>配置 <select id="cfg-sel"></select></label>
+  <button id="btn-run">lint + 解析</button>
+  <span id="status"></span>
+</header>
+<main>
+  <section id="pane-tpl"><h2>模板 (.cmdb)</h2><textarea id="tpl" spellcheck="false"></textarea></section>
+  <section id="pane-lint">
+    <h2>模板体检 <span id="lint-badge"></span></h2>
+    <div class="list" id="lint-list"></div>
+  </section>
+  <section id="pane-result">
+    <h2>解析结果 <span id="parse-badge"></span>
+        <button id="btn-trace" style="float:right;font-size:11px;padding:1px 8px;background:#eee;color:#333;border:1px solid var(--border);border-radius:3px;cursor:pointer">命中明细</button></h2>
+    <pre id="result"></pre>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const TPL_FILES = ["huawei-vrp.cmdb", "zte-m6000.cmdb", "nokia-sros.cmdb"];
+const CFG_FILES = ["sample-vrp.txt"];
+
+// ── 文件加载 ─────────────────────────────────────────
+async function loadFile(kind, name, target) {
+  const r = await fetch(`/api/file?path=${encodeURIComponent(name)}`);
+  const d = await r.json();
+  if (d.error) { alert(d.error); return; }
+  target.value = d.content;
+  target.dataset.name = name;
+}
+
+async function init() {
+  const ts = $("tpl-sel"), cs = $("cfg-sel");
+  for (const f of TPL_FILES) ts.add(new Option(f, f));
+  for (const f of CFG_FILES) cs.add(new Option(f, f));
+  await loadFile("tpl", TPL_FILES[0], $("tpl"));
+  await loadFile("cfg", CFG_FILES[0], $("tpl") && $("result") ? $("tpl") : $("tpl"));
+  const r2 = await fetch("/api/file?path=" + encodeURIComponent(CFG_FILES[0]));
+  const d2 = await r2.json();
+  if (d2.content) window._configText = d2.content;
+}
+// 配置文本放全局（无配置编辑窗格，当前用 fixture）
+$("cfg-sel").addEventListener("change", async e => {
+  const r = await fetch("/api/file?path=" + encodeURIComponent(e.target.value));
+  const d = await r.json();
+  window._configText = d.content || "";
+});
+
+// ── lint + 解析 ──────────────────────────────────────
+function setStatus(text, cls) {
+  $("status").innerHTML = text ? `<span class="badge ${cls}">${text}</span>` : "";
+}
+$("btn-run").addEventListener("click", async () => {
+  const btn = $("btn-run");
+  btn.disabled = true; setStatus("运行中…", "warn");
+  const tpl = $("tpl").value;
+  const cfg = window._configText || "";
+  try {
+    const [lr, pr] = await Promise.all([
+      fetch("/api/lint", {method: "POST", headers: {"Content-Type": "application/json"},
+                          body: JSON.stringify({template: tpl})}).then(r => r.json()),
+      cfg ? fetch("/api/parse", {method: "POST", headers: {"Content-Type": "application/json"},
+                           body: JSON.stringify({template: tpl, config: cfg})}).then(r => r.json())
+          : Promise.resolve(null),
+    ]);
+    renderLint(lr);
+    if (pr) renderParse(pr);
+    setStatus("完成", lr.ok && (!pr || pr.ok) ? "ok" : "err");
+  } catch (e) {
+    setStatus("请求失败: " + e, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function renderLint(d) {
+  const list = $("lint-list");
+  $("lint-badge").innerHTML = d.ok
+    ? `<span class="badge ok">通过</span>`
+    : `<span class="badge err">${d.errors.length} 个错误</span>`;
+  const parts = [];
+  for (const e of d.errors)  parts.push(`<div class="prob err">[错误] ${esc(e.message)}</div>`);
+  for (const w of d.warnings) parts.push(`<div class="prob warn">[${esc(w.level)}] ${esc(w.message)}</div>`);
+  if (d.tree.length) {
+    parts.push('<div class="prob info">── 集合树 ──</div>');
+    for (const c of d.tree) {
+      const ind = c.parent ? "sub" : "";
+      parts.push(`<div class="coll ${ind}"><b>${esc(c.name)}</b> ` +
+        `<span class="meta">${esc(c.type)} · ${c.fields} 字段 · ${c.rules} 规则` +
+        `${c.start ? " · start=" + esc(c.start) : ""}${c.end ? " · end=" + esc(c.end) : ""}</span></div>`);
+    }
+  }
+  list.innerHTML = parts.join("") || '<div class="prob ok">无问题</div>';
+}
+
+function renderParse(d) {
+  const el = $("result");
+  if (!d.ok) {
+    $("parse-badge").innerHTML = `<span class="badge err">解析失败</span>`;
+    el.textContent = d.error;
+    return;
+  }
+  const ts = d.traceSummary || {};
+  $("parse-badge").innerHTML =
+    `<span class="badge ok">成功</span> ` +
+    `<span class="badge">${ts.hitLines ?? "-"} / ${ts.totalLines ?? "-"} 行命中</span>`;
+  el.textContent = JSON.stringify(d.result, null, 2);
+  window._lastParse = d;
+}
+
+$("btn-trace").addEventListener("click", () => {
+  const d = window._lastParse;
+  if (!d || !d.traceSummary) return;
+  const rows = d.traceSummary.hits.map(h =>
+    `<tr><td class="n">${h.line}</td><td class="c">${esc(h.coll)}</td><td>${esc(h.text)}</td></tr>`).join("");
+  $("result").innerHTML =
+    `<div class="trace"><table><tr><th>行号</th><th>命中集合</th><th>配置行</th></tr>${rows}</table></div>`;
+});
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+init();
+</script>
+</body>
+</html>
