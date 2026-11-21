@@ -170,6 +170,10 @@ Name type(str) reg(\S+) desc(接口名) option(Key)
 **为什么必须这样**：华为全量配置 **100% 用 `#` 作块分隔符**
 （222 万行抽样：`#` 出现 249282 次、`!` 出现 0 次）。
 
+**中兴（2026-11-21 扩展）**：裸分隔符清单已加入 `$`。中兴 64 台实测每台数百处 `$`，
+且带缩进变体——顶格 `$` 关接口块、缩进 2 的 `$` 关分区子块（LACP/VLAN/BAS 等根命令下的 interface 块）。
+`end_indent(n)` 的语义对 `$` 同样生效。
+
 > ⚠️ **这里出过一个真实 bug（已修）**：早期把 `#` 一律当注释跳过，
 > 导致 `end(^#$)`) **永远不生效**，层级一路挂着不收。
 > 实测后果：`Acls` 从 `acl number 2000` 起一直挂到几千行后的
@@ -948,7 +952,8 @@ python tools/legacy/probe_coverage3.py templates/huawei-vrp.cmdb <配置文件>
 
 | 文件 | 覆盖 |
 |---|---|
-| `templates/huawei-vrp.cmdb` | 华为 VRP，15 个集合（8 个子集合） |
+| `templates/huawei-vrp.cmdb` | 华为 VRP，15 个集合（8 个子集合），318 台验证 |
+| `templates/zte-m6000.cmdb` | 中兴 M6000，分区根命令模型（`!<section>` 分区靠缩进 0 根命令分流），64 台验证 |
 | `templates/nokia-sros.cmdb` | Nokia SR OS，1 集合 + 2 子集合 |
 
 | 命令 | 作用 |
