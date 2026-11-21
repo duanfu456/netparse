@@ -72,7 +72,11 @@ netparse lint <模板路径> [--json] [--strict]
 
 检查内容（节选）：`func=` 引用不存在的 transform 函数、`secret` 字段禁止 `func=`、字段引用了未声明的名字、集合/字段重名、`option(Key)` 缺失提示等。**编辑模板后必跑**；lint 不过的模板不要落库。
 
-退出码：0 = 通过；1 = 有错误（`--strict` 时有警告也返回 1）。
+退出码：0 = 通过；1 = 有错误；`--strict` 时有警告也返回 1。
+
+⚠️ **管道退出码坑**：`netparse lint xx.cmdb | tail -1; echo $?` 里 `$?` 取的是
+`tail` 的退出码（永远是 0）。要拿 netparse 的退出码，不要接管道，
+或用 `PIPESTATUS`（bash：`netparse lint xx.cmdb --strict | tee log; exit ${PIPESTATUS[0]}`）。
 
 ---
 
