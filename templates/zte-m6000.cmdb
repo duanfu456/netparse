@@ -21,7 +21,7 @@ Device type(dict) desc(设备元信息)
 [value]
 HostName type(str) reg(\S+) desc(主机名)
 [rule]
-^hostname\s+${HostName}(?:\s+.*)?\s*$
+^hostname\s+${HostName}\s*$
 
 # ── 物理接口（!<if-intf> 分区，无根命令，直接顶格 interface）──
 Interfaces type(list) start(^interface\s+\S+) end(^\$\s*$) end_indent(0) indent(2) desc(接口)
@@ -41,17 +41,17 @@ IpAddress   type(list) desc(IPv4 地址)
 Ipv6Address type(list) desc(IPv6 地址)
   Address type(str) reg(\S+) desc(地址/前缀长)
 [rule]
-^interface\s+${Name}(?:\s+.*)?\s*$
+^interface\s+${Name}\s*$
 ^ {2}description\s+${Description}\s*$
 ^ {2}no shutdown\s*$           -> AdminStatus=up
 ^ {2}shutdown\s*$              -> AdminStatus=down
 ^ {2}off-line\s*$              -> Offline=true
-^ {2}mtu\s+${Mtu}(?:\s+.*)?\s*$
-^ {2}ip mtu\s+${IpMtu}(?:\s+.*)?\s*$
-^ {2}ipv6 mtu\s+${Ipv6Mtu}(?:\s+.*)?\s*$
+^ {2}mtu\s+${Mtu}\s*$
+^ {2}ip mtu\s+${IpMtu}\s*$
+^ {2}ipv6 mtu\s+${Ipv6Mtu}\s*$
 ^ {2}ipv6 enable\s*$           -> Ipv6Enable=true
-^ {2}ip vrf forwarding\s+${Vrf}(?:\s+.*)?\s*$
-^ {2}ip address\s+${IpAddress.Address}\s+${IpAddress.Mask}(?:\s+.*)?\s*$
+^ {2}ip vrf forwarding\s+${Vrf}\s*$
+^ {2}ip address\s+${IpAddress.Address}\s+${IpAddress.Mask}\s*$
 ^ {2}ipv6 address\s+${Ipv6Address.Address}\s*$
 
 # ── LACP（!<lacp>：根命令 lacp）──────────────────────────
@@ -68,10 +68,10 @@ dummy type(str) reg(never-match-placeholder) desc(占位)
   Mode    type(str) reg(\S+) desc(模式)
   Timeout type(str) reg(\S+) desc(超时)
   [rule]
-  ^ {2}interface\s+${Member}(?:\s+.*)?\s*$
-  ^ {4}smartgroup\s+${Group}\s+mode\s+${Mode}(?:\s+.*)?\s*$
-  ^ {4}lacp mode\s+${Mode}(?:\s+.*)?\s*$
-  ^ {4}lacp timeout\s+${Timeout}(?:\s+.*)?\s*$
+  ^ {2}interface\s+${Member}\s*$
+  ^ {4}smartgroup\s+${Group}\s+mode\s+${Mode}\s*$
+  ^ {4}lacp mode\s+${Mode}\s*$
+  ^ {4}lacp timeout\s+${Timeout}\s*$
 
 # ── VLAN 封装（!<vlan>：根命令 vlan-configuration）───────
 # BRAS 档每台约 1,233 个子接口。两种形态：
@@ -92,10 +92,10 @@ dummy type(str) reg(never-match-placeholder) desc(占位)
     Outer type(str) reg(\S+) desc(外层)
   Dynamic   type(str) reg(\S+) desc(动态 VLAN 模式)
   [rule]
-  ^ {2}interface\s+${Interface}(?:\s+.*)?\s*$
-  ^ {4}encapsulation-dot1q\s+${Dot1q.Vlan}(?:\s+.*)?\s*$
-  ^ {4}user-dynamic-vlan\s+${Dynamic}(?:\s+.*)?\s*$
-  ^ {4}qinq range internal-vlan-range\s+${QinQ.Inner}\s+external-vlan-range\s+${QinQ.Outer}(?:\s+.*)?\s*$
+  ^ {2}interface\s+${Interface}\s*$
+  ^ {4}encapsulation-dot1q\s+${Dot1q.Vlan}\s*$
+  ^ {4}user-dynamic-vlan\s+${Dynamic}\s*$
+  ^ {4}qinq range internal-vlan-range\s+${QinQ.Inner}\s+external-vlan-range\s+${QinQ.Outer}\s*$
 
 # ── BAS 用户接入（!<uim>：根命令 vcc-configuration）──────
 # 华为放在接口内 bas 视图；中兴独立分区。BRAS04 实测 783 个接口 / 1,507 条命令。
@@ -117,15 +117,15 @@ dummy type(str) reg(never-match-placeholder) desc(占位)
   LogicIp     type(str) reg(\S+) desc(NAS 逻辑 IP)
   PppoxTemplate type(str) reg(\S+) desc(PPPoX 模板)
   [rule]
-  ^ {2}interface\s+${Interface}(?:\s+.*)?\s*$
-  ^ {4}pre-domain\s+${PreDomain}(?:\s+.*)?\s*$
-  ^ {4}encapsulation\s+${Encap}(?:\s+.*)?\s*$
-  ^ {4}access-delay\s+${AccessDelay}(?:\s+${DelayMode})?(?:\s+.*)?\s*$
-  ^ {4}bind sal\s+${Sal}(?:\s+.*)?\s*$
-  ^ {4}ip-access-type\s+${AccessType}(?:\s+.*)?\s*$
-  ^ {4}nas logic-interface\s+${LogicInterface}(?:\s+.*)?\s*$
-  ^ {4}nas logic-ip\s+${LogicIp}(?:\s+.*)?\s*$
-  ^ {4}pppox template\s+${PppoxTemplate}(?:\s+.*)?\s*$
+  ^ {2}interface\s+${Interface}\s*$
+  ^ {4}pre-domain\s+${PreDomain}\s*$
+  ^ {4}encapsulation\s+${Encap}\s*$
+  ^ {4}access-delay\s+${AccessDelay}(?:\s+${DelayMode})?\s*$
+  ^ {4}bind sal\s+${Sal}\s*$
+  ^ {4}ip-access-type\s+${AccessType}\s*$
+  ^ {4}nas logic-interface\s+${LogicInterface}\s*$
+  ^ {4}nas logic-ip\s+${LogicIp}\s*$
+  ^ {4}pppox template\s+${PppoxTemplate}\s*$
 
 # ── 接口限速（!<car>：根命令 qos）────────────────────────
 CarRoot type(list) start(^qos\s*$) desc(限速分区)
@@ -140,8 +140,8 @@ dummy type(str) reg(never-match-placeholder) desc(占位)
   Cir       type(int) reg(\d+) desc(CIR kbps)
   Pir       type(int) reg(\d+) desc(PIR kbps)
   [rule]
-  ^ {2}interface\s+${Interface}(?:\s+.*)?\s*$
-  ^ {4}rate-limit\s+${Direction}\s+\S+\s+cir\s+${Cir}\s+kbps\s+cbs\s+\d+\s+pir\s+${Pir}(?:\s+.*)?\s*$
+  ^ {2}interface\s+${Interface}\s*$
+  ^ {4}rate-limit\s+${Direction}\s+\S+\s+cir\s+${Cir}\s+kbps\s+cbs\s+\d+\s+pir\s+${Pir}\s*$
 
 # ── VPN 实例（!<vrf>：顶格 ip vrf NAME）──────────────────
 Vrfs type(list) start(^ip vrf\s+\S+) end(^\$\s*$) end_indent(0) desc(VPN 实例)
@@ -154,11 +154,11 @@ Targets type(list) desc(Route Target)
   Direction type(str) reg(import|export) desc(方向)
   Value     type(str) reg(\S+) desc(RT 值)
 [rule]
-^ip vrf\s+${Name}(?:\s+.*)?\s*$
+^ip vrf\s+${Name}\s*$
 ^ {2}description\s+${Description}\s*$
-^ {2}rd\s+${RD}(?:\s+.*)?\s*$
-^ {2}address-family\s+${Family}(?:\s+.*)?\s*$
-^ {4}route-target\s+${Targets.Direction}\s+${Targets.Value}(?:\s+.*)?\s*$
+^ {2}rd\s+${RD}\s*$
+^ {2}address-family\s+${Family}\s*$
+^ {4}route-target\s+${Targets.Direction}\s+${Targets.Value}\s*$
 
 # ── ACL（!<ipv4-acl> / !<ipv6-acl>）──────────────────────
 # `ipv4-access-list NAME` 顶格；rule 缩进 2。语法与华为完全不同。
@@ -167,7 +167,7 @@ Acls type(list) start(^(?:ipv4|ipv6)-access-list\s+\S+) end(^\$\s*$) end_indent(
 Name type(str) reg(\S+) desc(名称) option(Key)
 Family type(str) reg(ipv4|ipv6) desc(地址族)
 [rule]
-^(ipv4|ipv6)-access-list\s+${Name}(?:\s+.*)?\s*$
+^(ipv4|ipv6)-access-list\s+${Name}\s*$
 
   # rule 形态：
   #   rule 1 deny tcp any any eq 135
@@ -184,7 +184,7 @@ Family type(str) reg(ipv4|ipv6) desc(地址族)
   DestinationMask type(str) reg(\S+) desc(目的掩码)
   DestPort type(str) reg(\S+) desc(目的端口)
   [rule]
-  ^ {2}rule\s+${Sequence}\s+${Action}(?:\s+(?!any\b)${Protocol})?(?:\s+(?:any|host)\s+${Source}(?:\s+${SourceMask})?)?(?:\s+(?:any|host)\s+${Destination}(?:\s+${DestinationMask})?)?(?:\s+eq\s+${DestPort})?(?:\s+.*)?\s*$
+  ^ {2}rule\s+${Sequence}\s+${Action}(?:\s+(?!any\b)${Protocol})?(?:\s+(?:any|host)\s+${Source}(?:\s+${SourceMask})?)?(?:\s+(?:any|host)\s+${Destination}(?:\s+${DestinationMask})?)?(?:\s+eq\s+${DestPort})?\s*$
 
 # ── BGP（!<bgp>：根命令 router bgp N）────────────────────
 Bgp type(list) start(^router bgp\s+\d+) end(^\$\s*$) end_indent(0) desc(BGP)
@@ -197,11 +197,11 @@ Networks type(list) desc(宣告网段)
   Prefix type(str) reg(\S+) desc(前缀)
   Mask   type(str) reg(\S+) desc(掩码)
 [rule]
-^router bgp\s+${AsNumber}(?:\s+.*)?\s*$
-^ {2}bgp router-id\s+${RouterId}(?:\s+.*)?\s*$
-^ {2}synchronization\s+${Synchronization}(?:\s+.*)?\s*$
-^ {2}maximum-paths ibgp\s+${MaxPathsIbgp}(?:\s+.*)?\s*$
-^ {2}network\s+${Networks.Prefix}\s+${Networks.Mask}(?:\s+.*)?\s*$
+^router bgp\s+${AsNumber}\s*$
+^ {2}bgp router-id\s+${RouterId}\s*$
+^ {2}synchronization\s+${Synchronization}\s*$
+^ {2}maximum-paths ibgp\s+${MaxPathsIbgp}\s*$
+^ {2}network\s+${Networks.Prefix}\s+${Networks.Mask}\s*$
 
   # 邻居组：peer-group 行为入口
   BgpGroups type(list) start(^ {2}neighbor\s+\S+\s+peer-group\s*$) indent(2) desc(BGP 邻居组)
@@ -214,10 +214,10 @@ Networks type(list) desc(宣告网段)
   Password type(secret) reg(.+) desc(密码)
   [rule]
   ^ {2}neighbor\s+${Name}\s+peer-group\s*$                        -> BgpGroups{Name}
-  ^ {2}neighbor\s+${Name}\s+remote-as\s+${RemoteAs}(?:\s+.*)?\s*$
+  ^ {2}neighbor\s+${Name}\s+remote-as\s+${RemoteAs}\s*$
   ^ {2}neighbor\s+${Name}\s+description\s+${Description}\s*$
-  ^ {2}neighbor\s+${Name}\s+update-source\s+${UpdateSource}(?:\s+.*)?\s*$
-  ^ {2}neighbor\s+${Name}\s+password\s+encrypted\s+${Password}(?:\s+.*)?\s*$
+  ^ {2}neighbor\s+${Name}\s+update-source\s+${UpdateSource}\s*$
+  ^ {2}neighbor\s+${Name}\s+password\s+encrypted\s+${Password}\s*$
         -> BgpGroups{Name,PasswordType="encrypted",Password}
 
   # IP 邻居：`neighbor <IP|IPv6> remote-as` 为入口（组名不是 IP）
@@ -229,8 +229,8 @@ Networks type(list) desc(宣告网段)
   Group type(str) reg(\S+) desc(所属组)
   Description type(str) reg(.+) desc(描述)
   [rule]
-  ^ {2}neighbor\s+${Peer}\s+remote-as\s+${RemoteAs}(?:\s+.*)?\s*$
-  ^ {2}neighbor\s+${Peer}\s+peer-group\s+${Group}(?:\s+.*)?\s*$
+  ^ {2}neighbor\s+${Peer}\s+remote-as\s+${RemoteAs}\s*$
+  ^ {2}neighbor\s+${Peer}\s+peer-group\s+${Group}\s*$
   ^ {2}neighbor\s+${Peer}\s+description\s+${Description}\s*$
 
   # address-family 子块内的邻居（缩进 4）：VPN 专线邻居，AS 常为 4 字节点分
@@ -243,10 +243,10 @@ Networks type(list) desc(宣告网段)
   PasswordType type(str) reg(\S+) desc(密码类型)
   Password type(secret) reg(.+) desc(密码)
   [rule]
-  ^ {4}neighbor\s+${Peer}\s+remote-as\s+${RemoteAs}(?:\s+.*)?\s*$
+  ^ {4}neighbor\s+${Peer}\s+remote-as\s+${RemoteAs}\s*$
   ^ {4}neighbor\s+${Peer}\s+description\s+${Description}\s*$
-  ^ {4}neighbor\s+${Peer}\s+update-source\s+${UpdateSource}(?:\s+.*)?\s*$
-  ^ {4}neighbor\s+${Peer}\s+password\s+encrypted\s+${Password}(?:\s+.*)?\s*$
+  ^ {4}neighbor\s+${Peer}\s+update-source\s+${UpdateSource}\s*$
+  ^ {4}neighbor\s+${Peer}\s+password\s+encrypted\s+${Password}\s*$
         -> VpnBgpPeers{Peer,PasswordType="encrypted",Password}
 
 # ── 静态路由（!<static>）─────────────────────────────────
@@ -257,7 +257,7 @@ Mask    type(str) reg(\S+) desc(掩码) option(Key)
 NextHop type(str) reg(\S+) desc(下一跳) option(Key)
 Tag     type(str) reg(\S+) desc(名称标签)
 [rule]
-^ip route\s+${Prefix}\s+${Mask}\s+${NextHop}(?:\s+name\s+${Tag})?(?:\s+.*)?\s*$
+^ip route\s+${Prefix}\s+${Mask}\s+${NextHop}(?:\s+name\s+${Tag})?\s*$
 
 # ── VRRP（!<vrrp>：根命令 vrrp）──────────────────────────
 VrrpRoot type(list) start(^vrrp\s*$) desc(VRRP 分区)
@@ -274,11 +274,11 @@ dummy type(str) reg(never-match-placeholder) desc(占位)
   PreemptDelay type(int) reg(\d+) desc(抢占延迟)
   BackupRoute type(str) reg(\S+) desc(备份路由)
   [rule]
-  ^ {2}interface\s+${Interface}(?:\s+.*)?\s*$
-  ^ {4}vrrp\s+${Vrid}\s+priority\s+${Priority}(?:\s+.*)?\s*$
-  ^ {4}vrrp\s+${Vrid}\s+ipv4\s+${VirtualIp}(?:\s+.*)?\s*$
-  ^ {4}vrrp\s+${Vrid}\s+preempt delay\s+${PreemptDelay}(?:\s+.*)?\s*$
-  ^ {4}vrrp\s+${Vrid}\s+backup-route\s+${BackupRoute}(?:\s+.*)?\s*$
+  ^ {2}interface\s+${Interface}\s*$
+  ^ {4}vrrp\s+${Vrid}\s+priority\s+${Priority}\s*$
+  ^ {4}vrrp\s+${Vrid}\s+ipv4\s+${VirtualIp}\s*$
+  ^ {4}vrrp\s+${Vrid}\s+preempt delay\s+${PreemptDelay}\s*$
+  ^ {4}vrrp\s+${Vrid}\s+backup-route\s+${BackupRoute}\s*$
 
 # ── ARP 属性（!<arp>：根命令 arp）────────────────────────
 ArpRoot type(list) start(^arp\s*$) desc(ARP 分区)
@@ -293,8 +293,8 @@ dummy type(str) reg(never-match-placeholder) desc(占位)
   LocalProxy type(str) reg(\S+) desc(本地代理)
   InterVlanProxy type(str) reg(\S+) desc(跨 VLAN 代理)
   [rule]
-  ^ {2}interface\s+${Interface}(?:\s+.*)?\s*$
+  ^ {2}interface\s+${Interface}\s*$
   ^ {4}proxy local\s*$        -> Proxy="local"
-  ^ {4}proxy\s+${Proxy}(?:\s+.*)?\s*$
+  ^ {4}proxy\s+${Proxy}\s*$
   ^ {4}local-proxy-arp\s*$    -> LocalProxy="enable"
   ^ {4}inter-vlan-proxy\s*$   -> InterVlanProxy="enable"

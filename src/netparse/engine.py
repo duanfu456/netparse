@@ -398,6 +398,19 @@ def compile_rule(rule, coll):
 
     pattern = re.sub(r"\(\?P(?:<([^>=]+)>|=([\w.]+))", norm_group, pattern)
 
+    # 尾部放宽自动补齐（2026-11-21）：规则若以 \s*$ / $ 结尾但没有「尾部放宽组」
+    # (?:\s+.*)?，就在 \s*$ 前插入一个。解决「末字段是 \S+/\d+、行尾还有残余
+    # token 时整行失配」——实测去掉手写尾巴会丢 2.9% 命中（qos car / ip urpf 重灾区）。
+    # 已手写 (?:\s+.*)? 的规则不受影响（不重复插入）。
+    stripped = pattern.rstrip()
+    if stripped.endswith(("$", "\\s*$")) and "(?:\\s+.*)?" not in pattern:
+        # 找到最后一个 $\ 前的位置：把 \s*$ 或 $ 替换为 (?:\s+.*)?\s*$
+        if stripped.endswith("\\s*$"):
+            body = stripped[:-len("\\s*$")]
+            pattern = body + "(?:\\s+.*)?\\s*$"
+        else:
+            pattern = stripped[:-1] + "(?:\\s+.*)?$"
+
     return CompiledRule(re.compile(pattern), group_paths, path_groups, rule.target)
 
 
