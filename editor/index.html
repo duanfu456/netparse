@@ -26,26 +26,35 @@
             display: flex; flex-direction: column; min-height: 0; }
   section h2 { font-size: 12px; margin: 0; padding: 6px 10px; color: var(--muted);
                border-bottom: 1px solid var(--border); font-weight: 600; }
-  /* ── 高亮编辑器 ── */
-  .editor-wrap { flex: 1; position: relative; min-height: 0; overflow: hidden; }
-  .editor-wrap pre, .editor-wrap textarea {
+  /* ── 高亮编辑器（gutter 折叠区 + 代码层）── */
+  .editor-wrap { flex: 1; position: relative; min-height: 0; overflow: hidden;
+                 display: flex; }
+  #gutter { width: 34px; flex: none; background: var(--panel); border-right: 1px solid var(--border);
+            overflow: hidden; font: 13px/1.5 var(--mono); color: var(--muted);
+            user-select: none; position: relative; }
+  #gutter .gline { height: 19.5px; line-height: 19.5px; padding-left: 4px; }
+  .fold-btn { cursor: pointer; display: inline-block; width: 20px; text-align: center;
+              color: var(--accent); font-weight: 700; }
+  .code-area { flex: 1; position: relative; min-width: 0; overflow: hidden; }
+  .code-area pre, .code-area textarea {
     position: absolute; inset: 0; margin: 0; padding: 10px;
     font: 13px/1.5 var(--mono); tab-size: 4; white-space: pre;
     overflow: auto; border: 0; }
-  .editor-wrap pre { pointer-events: none; color: var(--fg); background: transparent;
-                     z-index: 1; overflow: hidden; }
-  .editor-wrap textarea { background: transparent; color: transparent;
-                          caret-color: var(--fg); outline: none; resize: none; z-index: 2; }
-  .editor-wrap textarea::selection { background: rgba(9,105,218,.25); color: transparent; }
+  .code-area pre { pointer-events: none; color: var(--fg); background: transparent;
+                   z-index: 1; overflow: hidden; }
+  .code-area textarea { background: transparent; color: transparent;
+                        caret-color: var(--fg); outline: none; resize: none; z-index: 2; }
+  .code-area textarea::selection { background: rgba(9,105,218,.25); color: transparent; }
+  .folded-mark { color: var(--muted); background: #eaeef2; border-radius: 3px; padding: 0 4px; }
   /* 语法着色 */
   .tk-comment { color: #6a737d; font-style: italic; }
-  .tk-sec     { color: #8250df; font-weight: 700; }        /* [value] [rule] */
-  .tk-coll    { color: #0969da; font-weight: 700; }        /* 集合名 */
-  .tk-field   { color: #953800; }                          /* 字段名 */
-  .tk-kw      { color: #cf222e; }                          /* type/start/end/indent... */
-  .tk-str     { color: #0a7d32; }                          /* ( ... ) 内的内容 */
-  .tk-target  { color: #8250df; }                          /* -> 目标 */
-  #pane-result pre, .jsonview { flex: 1; margin: 0; padding: 10px; font: 12px/1.45 var(--mono);
+  .tk-sec     { color: #8250df; font-weight: 700; }
+  .tk-coll    { color: #0969da; font-weight: 700; }
+  .tk-field   { color: #953800; }
+  .tk-kw      { color: #cf222e; }
+  .tk-str     { color: #0a7d32; }
+  .tk-target  { color: #8250df; }
+  #pane-result pre { flex: 1; margin: 0; padding: 10px; font: 12px/1.45 var(--mono);
                      overflow: auto; white-space: pre; }
   .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
   .badge.ok   { background: #dafbe1; color: var(--ok); }
@@ -53,7 +62,7 @@
   .badge.warn { background: #fff8c5; color: var(--warn); }
   #pane-lint .list { flex: 1; overflow: auto; padding: 8px; }
   .prob { padding: 4px 8px; margin-bottom: 4px; border-radius: 4px; font-size: 12px;
-          font-family: var(--mono); white-space: pre-wrap; word-break: break-all; cursor: pointer; }
+          font-family: var(--mono); white-space: pre-wrap; word-break: break-all; }
   .prob.err  { background: #ffebe9; color: var(--err); }
   .prob.warn { background: #fff8c5; color: var(--warn); }
   .prob.info { background: #ddf4ff; color: var(--accent); }
@@ -71,10 +80,12 @@
   /* ── 自动补全弹窗 ── */
   #ac-box { position: fixed; z-index: 99; background: var(--panel); border: 1px solid var(--border);
             border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none;
-            max-height: 240px; overflow: auto; min-width: 220px; font: 12px/1.6 var(--mono); }
+            max-height: 260px; overflow: auto; min-width: 240px; font: 12px/1.6 var(--mono); }
   #ac-box .item { padding: 3px 10px; cursor: pointer; }
   #ac-box .item:hover, #ac-box .item.sel { background: #ddf4ff; }
   #ac-box .item b { color: var(--accent); }
+  #ac-box .hd { padding: 2px 10px; color: var(--muted); font-size: 11px;
+                border-bottom: 1px solid var(--border); }
   /* 选区提示条 */
   #sel-tip { position: fixed; z-index: 98; background: #333; color: #fff; font-size: 12px;
              padding: 4px 10px; border-radius: 4px; display: none; }
@@ -92,8 +103,11 @@
   <span id="status"></span>
 </header>
 <main>
-  <section id="pane-tpl"><h2>模板 (.cmdb) — 自动补全: Ctrl+Space · 选中文本试运行</h2>
-    <div class="editor-wrap"><pre aria-hidden="true"><code id="hl"></code></pre><textarea id="tpl" spellcheck="false" autocomplete="off"></textarea></div>
+  <section id="pane-tpl"><h2>模板 — ${ 触发补全 · 点 ▸ 折叠集合 · 选中即试运行</h2>
+    <div class="editor-wrap">
+      <div id="gutter"></div>
+      <div class="code-area"><pre aria-hidden="true"><code id="hl"></code></pre><textarea id="tpl" spellcheck="false" autocomplete="off"></textarea></div>
+    </div>
   </section>
   <section id="pane-lint">
     <h2>模板体检 <span id="lint-badge"></span></h2>
@@ -112,62 +126,184 @@
 const $ = id => document.getElementById(id);
 const TPL_FILES = ["huawei-vrp.cmdb", "zte-m6000.cmdb", "nokia-sros.cmdb"];
 const CFG_FILES = ["sample-vrp.txt"];
-let WORDS = [];   // 自动补全词表（来自 /api/words）
+let WORDS = [];          // 通用词表（关键字等）
+let LAST_LINT = null;    // 最近 lint 的树（含字段归属），兜底补全用
 
-// ═══════════ 语法高亮 ═══════════
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, c =>
-    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-}
-function highlight(src) {
-  const out = [];
-  for (const line of src.split("\n")) {
-    let h = esc(line);
-    // 注释整行
-    if (/^\s*#/.test(line)) { out.push(`<span class="tk-comment">${h}</span>`); continue; }
-    // 段头
-    if (/^\s*\[(value|rule)\]\s*$/.test(line)) { out.push(`<span class="tk-sec">${h}</span>`); continue; }
-    // -> 目标（从 -> 起整段染色）
-    const tIdx = h.indexOf("-&gt;");
-    let target = "";
-    if (tIdx >= 0) { target = `<span class="tk-target">${h.slice(tIdx)}</span>`; h = h.slice(0, tIdx); }
-    // 集合声明：顶格 大写名 type(...)
-    h = h.replace(/^([A-Z]\w*)(\s+)(type|start|end|indent|end_indent|desc)\b/g,
-        '<span class="tk-coll">$1</span>$2<span class="tk-kw">$3</span>');
-    // 字段声明：缩进 大写名 type(...) 或 ${字段} 引用
-    h = h.replace(/(\s)([A-Z][\w.]*)(\s+)(type|start|end|desc|option|default|reg|inherit)\b/g,
-        '$1<span class="tk-field">$2</span>$3<span class="tk-kw">$4</span>');
-    h = h.replace(/\$\{([A-Za-z_][\w.]*)\}/g, '<span class="tk-field">${$1}</span>');
-    // 关键字
-    h = h.replace(/\b(option|Key|Required|secret|list|dict|str|int|float|bool|inherit=)\b/g,
-        '<span class="tk-kw">$1</span>');
-    // ( ... ) 内容染绿（reg/desc/start 的参数）
-    h = h.replace(/\(([^()]{1,120}?)\)/g, '(<span class="tk-str">$1</span>)');
-    out.push(h + target);
+// ═══════════ 结构分析：集合归属 + 字段清单 ═══════════
+function analyze(text) {
+  // 行分类（只用于折叠区间；字段清单以 lint tree 为权威来源）
+  const lines = text.split("\n");
+  const kinds = [];
+  let cur = null;
+  for (const ln of lines) {
+    const s = ln.trim();
+    let kind = "other";
+    if (!s) kind = "other";
+    else if (s.startsWith("#")) kind = "comment";
+    else if (/^\s*\[(value|rule)\]\s*$/.test(ln)) kind = "sec";
+    else if (/^[A-Z]\w*\s+type\(/.test(ln) && !/^\s/.test(ln)) { kind = "coll"; }
+    else kind = "rule-or-field";
+    kinds.push(kind);
   }
-  return out.join("\n");
+  return {kinds};
 }
-function syncHl() {
+
+// 折叠区间：每个集合从其声明行起，到下一个顶格集合声明（或 EOF）前
+function foldRanges(kinds, text) {
+  const lines = text.split("\n");
+  const ranges = [];   // {start(0-based 声明行), end(最后一个折叠行)}
+  let curStart = null, curColl = null;
+  for (let i = 0; i < kinds.length; i++) {
+    if (kinds[i] === "coll") {
+      if (curStart !== null) ranges.push({start: curStart, end: i - 1, coll: curColl});
+      curStart = i; curColl = (lines[i].match(/^([A-Z]\w*)/) || [])[1] || "";
+    }
+  }
+  if (curStart !== null) ranges.push({start: curStart, end: kinds.length - 1, coll: curColl});
+  return ranges.filter(r => r.end > r.start);
+}
+
+// ═══════════ 折叠状态 ═══════════
+let FOLD = {};         // {startLine: true}（折叠的集合）
+let SRC = "";          // 当前编辑器文本
+let ANA = null;
+let FIELDS = {};   // lint 后填充：{集合名: [字段名]} —— ${ 补全的权威词源
+
+function render() {
   const ta = $("tpl");
-  $("hl").innerHTML = highlight(ta.value) + "\n";
+  SRC = ta.value;
+  ANA = analyze(SRC);
+  // ---- 计算可见行 + gutter ----
+  const ranges = foldRanges(ANA.kinds, SRC);
+  const lines = SRC.split("\n");
+  const visible = [];            // [{text, srcLine}]
+  const gutterInfo = [];         // per visible line: {foldBtn?, foldState?}
+  const spans = {};              // srcLine -> 折叠提示 span
+  for (const r of ranges) {
+    if (FOLD[r.start]) spans[r.start] = {r, count: r.end - r.start};
+  }
+  let i = 0;
+  while (i < lines.length) {
+    if (spans[i]) {
+      const r = spans[i];
+      // 折叠：显示声明行 + 摘要标记
+      visible.push({text: lines[i], src: i, fold: "open"});
+      visible.push({text: `  ⋯ 已折叠 ${r.count - r.start - 0} 行（${r.coll}）⌃点击展开`, src: null, foldedFor: r});
+      i = r.end + 1;
+    } else {
+      const isColl = ANA.kinds[i] === "coll";
+      const hasRange = ranges.some(x => x.start === i);
+      visible.push({text: lines[i], src: i, fold: hasRange ? "close" : null});
+      i++;
+    }
+  }
+  // ---- 渲染 gutter 与高亮层 ----
+  let g = "", h = "";
+  for (const v of visible) {
+    const ln = v.text;
+    // gutter
+    if (v.fold === "close") g += `<div class="gline"><span class="fold-btn" data-fold="${v.src}">▸</span></div>`;
+    else if (v.fold === "open") g += `<div class="gline"><span class="fold-btn" data-unfold="${v.foldedFor.start}">▾</span></div>`;
+    else g += `<div class="gline"></div>`;
+    // code
+    let hh = esc(ln);
+    if (v.foldedFor) {
+      h += `<span class="folded-mark" data-unfold="${v.foldedFor.start}" style="cursor:pointer">${hh}</span>\n`;
+      continue;
+    }
+    if (ln && !/^\s*#/.test(ln)) {
+      let x = hh;
+      if (/^\s*\[(value|rule)\]\s*$/.test(ln)) x = `<span class="tk-sec">${x}</span>`;
+      else {
+        let target = "";
+        const ti = x.indexOf("-&gt;");
+        if (ti >= 0) { target = `<span class="tk-target">${x.slice(ti)}</span>`; x = x.slice(0, ti); }
+        x = x.replace(/^([A-Z]\w*)(\s+)(type|start|end|indent|end_indent|desc)\b/g,
+            '<span class="tk-coll">$1</span>$2<span class="tk-kw">$3</span>');
+        x = x.replace(/(\s)([A-Z][\w.]*)(\s+)(type|start|end|desc|option|default|reg|inherit)\b/g,
+            '$1<span class="tk-field">$2</span>$3<span class="tk-kw">$4</span>');
+        x = x.replace(/\$\{([A-Za-z_][\w.]*)\}/g, '<span class="tk-field">${$1}</span>');
+        x = x.replace(/\b(option|Key|Required|secret|list|dict|str|int|float|bool|inherit=)\b/g,
+            '<span class="tk-kw">$1</span>');
+        x = x.replace(/\(([^()]{1,120}?)\)/g, '(<span class="tk-str">$1</span>)');
+        h += x + target + "\n";
+        // gutter 对齐
+        continue;
+      }
+      h += x + "\n";
+    } else {
+      h += (hh || "") + "\n";
+    }
+  }
+  $("hl").innerHTML = h;
+  $("gutter").innerHTML = g;
 }
+
+function unfold(startLine) { delete FOLD[startLine]; render(); restoreCaret(); }
+function foldAt(startLine) { FOLD[startLine] = true; render(); restoreCaret(); }
+function restoreCaret() {
+  // 折叠/展开后 textarea 内容不变（只是显示层变化），无需恢复光标——显示层独立。
+}
+
+// gutter 点击（事件委托）
+$("gutter").addEventListener("click", e => {
+  const f = e.target.dataset.fold, u = e.target.dataset.unfold;
+  if (f !== undefined) foldAt(+f);
+  else if (u !== undefined) unfold(+u);
+});
+// 折叠摘要点击展开
+$("hl").addEventListener("click", e => {
+  const u = e.target.dataset && e.target.dataset.unfold;
+  if (u !== undefined) unfold(+u);
+});
 
 // ═══════════ 自动补全 ═══════════
 const acBox = $("ac-box");
 let acItems = [], acSel = 0, acStart = null;
 
-function acHide() { acBox.style.display = "none"; acItems = []; }
-function acShow(prefix, caret) {
-  const p = prefix.toLowerCase();
-  acItems = WORDS.filter(w => w.toLowerCase().startsWith(p) && w.toLowerCase() !== p).slice(0, 12);
-  if (!acItems.length) { acHide(); return; }
-  acSel = 0;
-  acBox.innerHTML = acItems.map((w, i) =>
-    `<div class="item${i === 0 ? " sel" : ""}"><b>${esc(w.slice(0, prefix.length))}</b>${esc(w.slice(prefix.length))}</div>`).join("");
-  const r = getCaretPx(caret);
+// 上下文感知补全：${ 后 → 当前模板已声明字段路径（lint tree 为权威来源）
+function completionWords(before) {
+  const m = before.match(/\$\{([\w.]*)$/);
+  if (m) {
+    const typed = m[1];
+    // FIELDS[集合名] = fieldNames 数组（已含点号嵌套路径，如 QosCar.Cir）
+    const seen = new Set();
+    const items = [];
+    for (const [coll, flds] of Object.entries(FIELDS)) {
+      for (const f of flds) {
+        if (!seen.has(f)) { seen.add(f); items.push({label: f, insert: f, hint: coll}); }
+      }
+    }
+    const p = typed.toLowerCase();
+    const filtered = items.filter(it => it.insert.toLowerCase().startsWith(p) && it.insert !== typed);
+    filtered.sort((a, b) => (a.insert.startsWith(typed) && !b.insert.startsWith(typed) ? -1
+                            : b.insert.startsWith(typed) && !a.insert.startsWith(typed) ? 1
+                            : a.insert.length - b.insert.length));
+    return {items: filtered.slice(0, 14), from: before.length - typed.length, header: "字段引用（当前模板已声明）"};
+  }
+  const m2 = before.match(/[A-Za-z_][\w.]*$/);
+  if (!m2) return null;
+  const typed = m2[0];
+  const p = typed.toLowerCase();
+  const all = [...new Set([...WORDS, ...Object.keys(FIELDS)])];
+  const items = all.filter(x => x.toLowerCase().startsWith(p) && x !== typed)
+                   .slice(0, 12).map(x => ({label: x, insert: x, hint: ""}));
+  return {items, from: before.length - typed.length, header: ""};
+}
+function pos0(before) { return before.length; }
+
+const acState = {items: [], sel: 0, from: 0};
+function acShow2(prefixText, caretPos, data) {
+  acState.items = data.items; acState.sel = 0; acState.from = data.from;
+  if (!data.items.length) { acHide(); return; }
+  acBox.innerHTML =
+    (data.header ? `<div class="hd">${esc(data.header)} — Enter/Tab 应用 · Esc 关闭</div>` : "") +
+    data.items.map((it, i) =>
+      `<div class="item${i === 0 ? " sel" : ""}"><b>${esc(it.label.slice(0, prefixText.length))}</b>${esc(it.label.slice(prefixText.length))}${it.hint ? ` <span style="color:var(--muted)">· ${esc(it.hint)}</span>` : ""}</div>`).join("");
+  const r = getCaretPx(caretPos);
   acBox.style.display = "block";
-  acBox.style.left = Math.min(r.x, window.innerWidth - 260) + "px";
-  acBox.style.top = Math.min(r.y + 20, window.innerHeight - 260) + "px";
+  acBox.style.left = Math.min(r.x, window.innerWidth - 280) + "px";
+  acBox.style.top = Math.min(r.y + 22, window.innerHeight - 300) + "px";
 }
 function getCaretPx(caret) {
   const ta = $("tpl");
@@ -177,51 +313,47 @@ function getCaretPx(caret) {
     div.style[k] = style[k];
   div.style.position = "absolute"; div.style.visibility = "hidden";
   div.textContent = ta.value.slice(0, caret);
-  document.body.appendChild(div);
   const marker = document.createElement("span");
   marker.textContent = "\u200b";
   div.appendChild(marker);
   document.body.appendChild(div);
-  const x = marker.offsetLeft + ta.offsetLeft + 14, y = marker.offsetTop + ta.offsetTop + 6;
+  const x = marker.offsetLeft + ta.offsetLeft + 48, y = marker.offsetTop + ta.offsetTop + 6;
   div.remove();
   return {x, y};
 }
 function acApply(word) {
   const ta = $("tpl");
   const pos = ta.selectionStart;
-  ta.value = ta.value.slice(0, acStart) + word + ta.value.slice(pos);
-  const np = acStart + word.length;
+  ta.value = ta.value.slice(0, acState.from) + word + ta.value.slice(pos);
+  const np = acState.from + word.length;
   ta.setSelectionRange(np, np);
-  acHide(); syncHl();
+  acHide(); render();
 }
 $("tpl").addEventListener("keydown", e => {
   if (acBox.style.display === "block") {
-    if (e.key === "ArrowDown") { acSel = (acSel + 1) % acItems.length; renderAcSel(); e.preventDefault(); return; }
-    if (e.key === "ArrowUp")   { acSel = (acSel - 1 + acItems.length) % acItems.length; renderAcSel(); e.preventDefault(); return; }
-    if (e.key === "Enter" || e.key === "Tab") { acApply(acItems[acSel]); e.preventDefault(); return; }
+    if (e.key === "ArrowDown") { acState.sel = (acState.sel + 1) % acState.items.length; renderAcSel(); e.preventDefault(); return; }
+    if (e.key === "ArrowUp")   { acState.sel = (acState.sel - 1 + acState.items.length) % acState.items.length; renderAcSel(); e.preventDefault(); return; }
+    if (e.key === "Enter" || e.key === "Tab") { acApply(acState.items[acState.sel].insert); e.preventDefault(); return; }
     if (e.key === "Escape") { acHide(); e.preventDefault(); return; }
-  } else if ((e.ctrlKey || e.metaKey) && e.key === " ") {
-    const ta = e.target, pos = ta.selectionStart;
-    const before = ta.value.slice(0, pos);
-    const m = before.match(/[A-Za-z_][\w.]*$/);
-    if (m) { acStart = pos - m[0].length; acShow(m[0], pos); e.preventDefault(); }
-    return;
   }
 });
 function renderAcSel() {
-  [...acBox.children].forEach((el, i) => el.classList.toggle("sel", i === acSel));
+  [...acBox.querySelectorAll(".item")].forEach((el, i) => el.classList.toggle("sel", i === acState.sel));
 }
 $("tpl").addEventListener("input", e => {
-  syncHl();
+  render();
   const ta = e.target, pos = ta.selectionStart;
   const before = ta.value.slice(0, pos);
-  const m = before.match(/[A-Za-z_][\w.]*$/);
-  if (m && m[0].length >= 2) { acStart = pos - m[0].length; acShow(m[0], pos); }
-  else acHide();
+  const data = completionWords(before);
+  if (data && data.items.length) {
+    const typed = before.slice(data.from);
+    acShow2(typed, pos, data);
+  } else acHide();
 });
 $("tpl").addEventListener("scroll", () => {
   $("hl").parentElement.scrollTop = $("tpl").scrollTop;
   $("hl").parentElement.scrollLeft = $("tpl").scrollLeft;
+  $("gutter").scrollTop = $("tpl").scrollTop;
   acHide();
 });
 document.addEventListener("click", e => { if (!acBox.contains(e.target)) acHide(); });
@@ -253,8 +385,8 @@ async function runSelection() {
   const r = await fetch("/api/parse-frag", {method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({fragment: sel, config: window._configText || ""})}).then(r => r.json());
-  renderParse(r, /*fragment*/ true);
-  setStatus(r.ok ? "片段试运行完成（结果只是该片段的产物）" : "片段运行失败", r.ok ? "ok" : "err");
+  renderParse(r, true);
+  setStatus(r.ok ? "片段试运行完成" : "片段运行失败", r.ok ? "ok" : "err");
 }
 
 // ═══════════ 文件加载 / 保存 ═══════════
@@ -264,7 +396,8 @@ async function loadInto(path, target) {
   if (d.error) { alert(d.error); return; }
   target.value = d.content;
   target.dataset.path = path;
-  syncHl();
+  FOLD = {};                 // 换模板清空折叠状态
+  render();
 }
 async function init() {
   const w = await fetch("/api/words").then(r => r.json());
@@ -284,7 +417,7 @@ $("cfg-sel").addEventListener("change", async e => {
 $("btn-save").addEventListener("click", async () => {
   const ta = $("tpl");
   const path = ta.dataset.path;
-  if (!confirm(`保存到 ${path}？（直接覆盖仓库模板文件）`)) return;
+  if (!confirm(`保存到 ${path}？（保存前会 lint，有错误拒绝落盘）`)) return;
   const r = await fetch("/api/save", {method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({path, content: ta.value})}).then(r => r.json());
@@ -319,19 +452,18 @@ $("btn-run").addEventListener("click", async () => {
 });
 
 function renderLint(d) {
+  // lint tree 是字段归属的权威来源 → 更新 ${ 补全词表
+  FIELDS = {};
+  for (const c of d.tree) FIELDS[c.name] = c.fieldNames || [];
   const list = $("lint-list");
   $("lint-badge").innerHTML = d.ok
     ? `<span class="badge ok">通过</span>`
     : `<span class="badge err">${d.errors.length} 个错误</span>`;
   const parts = [];
-  for (const e of d.errors) {
-    const coll = e.coll ? `${e.coll}: ` : "";
-    parts.push(`<div class="prob err" data-goto="${esc(e.message)}">[错误] ${esc(coll)}${esc(e.message)}</div>`);
-  }
-  for (const w of d.warnings) {
-    const coll = w.coll ? `${w.coll}: ` : "";
-    parts.push(`<div class="prob ${w.level === "警告" ? "warn" : "info"}">[${esc(w.level)}] ${esc(coll)}${esc(w.message)}</div>`);
-  }
+  for (const e of d.errors)
+    parts.push(`<div class="prob err">[错误] ${e.coll ? esc(e.coll) + ": " : ""}${esc(e.message)}</div>`);
+  for (const w of d.warnings)
+    parts.push(`<div class="prob ${w.level === "警告" ? "warn" : "info"}">[${esc(w.level)}] ${w.coll ? esc(w.coll) + ": " : ""}${esc(w.message)}</div>`);
   if (d.tree.length) {
     parts.push('<div class="prob info">── 集合树 ──</div>');
     for (const c of d.tree) {
@@ -367,6 +499,22 @@ $("btn-trace").addEventListener("click", () => {
     `<tr><td class="n">${h.line}</td><td class="c">${esc(h.coll)}</td><td>${esc(h.text)}</td></tr>`).join("");
   $("result").innerHTML =
     `<div class="trace"><table><tr><th>行号</th><th>命中集合</th><th>配置行</th></tr>${rows}</table></div>`;
+});
+
+// 输入停顿 900ms 后静默 lint（更新字段词表，不打扰编辑）
+let _lintTimer = null;
+$("tpl").addEventListener("input", () => {
+  clearTimeout(_lintTimer);
+  _lintTimer = setTimeout(async () => {
+    try {
+      const lr = await fetch("/api/lint", {method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({template: $("tpl").value})}).then(r => r.json());
+      // 只更新词表，不动 UI（避免打断输入）
+      FIELDS = {};
+      for (const c of lr.tree) FIELDS[c.name] = c.fieldNames || [];
+    } catch (_) {}
+  }, 900);
 });
 
 init();

@@ -69,7 +69,11 @@ def do_lint(template_text):
     tree = [{"name": c.name, "type": c.type,
              "start": c.start or "", "end": c.end or "",
              "parent": c.parent.name if c.parent else "",
-             "fields": len(c.all_fields), "rules": len(c.rules)} for c in colls]
+             "fields": len(c.all_fields),
+             "fieldNames": sorted(c.all_fields.keys()),
+             "rules": len(c.rules)} for c in colls]
+    # fieldNames 含嵌套路径（QosCar.Cir / Vrrp.VirtualIp.Address），
+    # ${ 补全直接可用 —— all_fields 的 key 就是字段路径。
     return {"ok": not errors, "errors": errors, "warnings": warnings, "tree": tree}
 
 
