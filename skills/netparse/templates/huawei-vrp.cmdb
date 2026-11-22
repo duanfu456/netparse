@@ -1,0 +1,554 @@
+# ══════════════════════════════════════════════════════════════════
+# 模板：华为 VRP → CMDB 资产
+#
+# 设备：华为 VRP V800R023C00SPC100 及以上（BRAS / SR 两类）
+# 验证语料：318 台现网配置 / 349 万行（cfgfile_20251224）
+# 验证样本：SNANK-MC-CMNET-BRAS02-DXSC-X16A（1048 接口 / BRAS）
+#
+# ── 结构 ──────────────────────────────────────────────────────────
+# 集合用缩进表达层级，每层有自己的 [value] / [rule]，以及 start / end。
+#
+# ── 层级模型（本模板的核心约定，务必先读）────────────────────────
+# 华为配置的层级由**缩进**表达，`#` 是段落分隔符且自带缩进：
+#
+#     interface Eth-Trunk4.1        ← 缩进 0：顶层块
+#      user-vlan 2500               ← 缩进 1：接口本级命令
+#      bas                          ← 缩进 1：进入 bas 视图
+#      #                            ← 缩进 1：只关 bas 视图
+#       access-type layer2-subscriber …  ← 缩进 2：bas 视图正文
+#       nas logic-ip 218.200.1.118       ← 缩进 2
+#      #                            ← 缩进 1：关 bas 视图
+#     #                             ← 缩进 0：关 interface
+#
+# 318 台设备实测：缩进只用到 0/1/2 三层，无 Tab，1 空格 1 层，无例外。
+# 因此本模板用两个声明把层级钉死，不依赖 start/end 配对：
+#
+#   indent(1)      —— 本集合的规则只匹配「恰好 1 个前导空格」的行
+#   end_indent(1)  —— 本层只被「恰好 1 个前导空格」的 `#` 关闭
+#
+# 二者都是 opt-in（不写就是旧行为）。`nas logic-port` 这类命令在缩进 1
+# 和缩进 2 都会出现，只有靠 indent() 才能分开放进不同字段。
+#
+# ── 规则写法约定 ──────────────────────────────────────────────────
+# 1. 尾部一律 `\s*$`。现网同类命令的参数组合有 8000 种形态，
+#    尾部写死 `\s*$` 会让「多一个 token」的行整条丢掉。实测：
+#    user-vlan 精确匹配 4,324 行 → 尾部放宽 28,771 行（+24,447）。
+# 2. 可选参数一律 `(?:...)?` 可选组，禁止「为每种组合写一条规则」。
+#    ACL 实测：穷举 6 条规则覆盖 18.3%，一条可选组规则覆盖 100%。
+# 3. default 只用于真常态，不用于凑填充率。没有规则来源的字段不要声明。
+#
+# 语义说明见 docs/TEMPLATE-GUIDE.md
+# ══════════════════════════════════════════════════════════════════
+
+# ── 设备级（无 start = 栈底常驻，始终生效）───────────────
+[python_file]
+transforms_huawei.py
+
+Device type(list) desc(设备)
+[value]
+SysName   type(str) reg(\S+) desc(系统名) option(Key)
+Version   type(str) reg(\S+) desc(版本)
+RouterId  type(str) reg(\S+) desc(Router ID)
+Platform  type(str) reg(\S+) desc(设备型号)
+[rule]
+^!Software\s+Version\s+${Version}\s*$
+^sysname\s+${SysName}\s*$
+^router id\s+${RouterId}\s*$
+^[Ss]ysname\s+${SysName}\s*$
+
+# ── 接口 ──────────────────────────────────────────────
+# 现网口径（318 台）：interface 块 233,666 个
+#   Eth-Trunk 系列为主（其中大量是 Eth-TrunkN.MMM 子接口），
+#   其次 GigabitEthernet / Vlanif / LoopBack / Virtual-Template
+Interfaces type(list) start(^interface\s+) end(^#$) end_indent(0) desc(接口集合)
+[value]
+Name          type(str)  reg(\S+) desc(接口名) option(Key)
+# Type（接口类型）：现网 21,427 个接口 100% 是 default(unknown) ——
+# 没有任何规则写它，这是上一轮审查漏掉的「default 造假」第 7 例。
+# 接口类型应由资产层从 Name 派生（Eth-Trunk/GigabitEthernet/Vlanif…），
+# 引擎层不臆造。等 transform 能力落地后再删这个字段。
+Type          type(str)  func=iface_type desc(接口类型；由 iface_type 从 Name 派生)
+AdminStatus   type(str)  default(up) reg(up|down) desc(管理状态)
+Description   type(str)  reg(.+) desc(描述)
+Mtu           type(int)  reg(\d+) desc(MTU)
+Speed         type(str)  reg(\S+) desc(速率)
+Duplex        type(str)  reg(\S+) desc(双工)
+VlanType      type(str)  reg(\S+) desc(VLAN 封装类型)
+Dot1qVlan     type(int)  reg(\d+) desc(外层 VLAN)
+UserVlan      type(list) desc(用户 VLAN 范围)
+  Start     type(int) reg(\d+) desc(起始 VLAN)
+  End       type(int) reg(\d+) desc(结束 VLAN)
+  QinQOuter type(int) reg(\d+) desc(QinQ 外层起始)
+  QinQInner type(int) reg(\d+) desc(QinQ 内层起始)
+CarrierDownHoldTime type(int) reg(\d+) desc(掉线保持时间)
+# `dcn`：接口块里全库只出现过 `undo dcn`（2,544 次），裸 `dcn` 0 次。
+# 没出现 = 未配置，不能臆造 false —— 旧模板 default(false) 让 18,883 条
+# 从未配置过 DCN 的接口全部标成 false，属于造假。
+Dcn           type(bool) desc(DCN 特性)
+IpBindingVpn  type(str)  reg(\S+) desc(绑定 VPN 实例)
+IpUrpf        type(str)  reg(\S+) desc(uRPF 模式)
+Ipv6Enable    type(bool) desc(IPv6 使能；`ipv6 enable` 全库 4,246 次 / 21,427 接口)
+AccessDelay   type(int)  reg(\d+) desc(接入延迟)
+DelayMode     type(str)  reg(\S+) desc(延迟模式)
+PppoeTemplate type(str)  reg(\S+) desc(PPPoE 绑定的 Virtual-Template)
+EthTrunk      type(str)  reg(\S+) desc(所属聚合口)
+LacpMode      type(str)  reg(\S+) desc(LACP 模式)
+LacpTimeout   type(str)  reg(\S+) desc(LACP 超时)
+Statistic     type(dict) desc(流量统计)
+  Enable type(bool) desc(统计开关)
+  Mode   type(str)  reg(\S+) desc(统计模式)
+QosCar        type(dict) desc(接口限速)
+  Cir        type(int) reg(\d+) desc(CIR kbps)
+  Pir        type(int) reg(\d+) desc(PIR kbps)
+  Cbs        type(int) reg(\d+) desc(CBS 字节)
+  Pbs        type(int) reg(\d+) desc(PBS 字节)
+  InboundCir type(int) reg(\d+) desc(入方向 CIR)
+  OutboundCir type(int) reg(\d+) desc(出方向 CIR)
+QosProfile    type(str)  reg(\S+) desc(绑定 QoS Profile)
+TrafficPolicy type(list) desc(流量策略)
+  Name      type(str) reg(\S+) desc(策略名)
+  Direction type(str) reg(\S+) desc(方向)
+Pim           type(dict) desc(PIM)
+  Mode       type(str)  reg(\S+) desc(PIM 模式)
+  DrPriority type(int) reg(\d+) desc(DR 优先级)
+  HelloInterval type(int) reg(\d+) desc(Hello 间隔)
+Igmp          type(dict) desc(IGMP)
+  Enable     type(bool) desc(IGMP 使能)
+  StaticGroup type(str) reg(\S+) desc(静态组)
+  Version    type(int) reg(\d+) desc(版本)
+Isis          type(dict) desc(ISIS)
+  Enable        type(int) reg(\d+) desc(进程号)
+  HelloInterval type(int) reg(\d+) desc(Hello 间隔秒)
+  CircuitType   type(str) reg(\S+) desc(电路类型)
+  CircuitLevel  type(str) reg(\S+) desc(电路层级)
+  Cost          type(int) reg(\d+) desc(开销)
+  Ipv6Enable    type(bool) desc(ISIS IPv6)
+  Ipv6Cost      type(int) reg(\d+) desc(ISIS IPv6 开销)
+  LdpSync       type(bool) desc(LDP Sync)
+  LdpSyncTimer  type(str) reg(\S+) desc(LDP Sync 定时器)
+  AuthMode      type(str) reg(\S+) desc(认证模式)
+  Authentication type(dict) desc(认证)
+    Mode    type(str) reg(\S+) desc(认证模式)
+    Algorithm type(str) reg(\S+) desc(算法)
+Vrrp          type(list) desc(VRRP)
+  Vrid      type(int) reg(\d+) desc(VRID)
+  Priority  type(int) reg(\d+) desc(优先级)
+  VirtualIp type(list) desc(虚拟 IP)
+    Address type(str) reg(\S+) desc(虚拟地址)
+Track         type(list) desc(track)
+  Kind      type(str) reg(\S+) desc(类型)
+  Target    type(str) reg(\S+) desc(目标)
+  DownWeight type(int) reg(\d+) desc(联动降权值)
+DefaultPasswordTemplate type(str) reg(\S+) desc(默认密码模板)
+DhcpSelect    type(str)  reg(\S+) desc(DHCP 服务器组)
+L2Binding     type(str)  reg(.+) desc(L2 绑定)
+TrustUpstream type(str)  reg(.+) desc(信任上游)
+Mpls          type(bool) desc(MPLS 使能；`mpls` 全库 643 次)
+MplsLdp       type(bool) desc(MPLS LDP 使能；`mpls ldp` 全库 522 次)
+MplsL2vc      type(str)  reg(.+) desc(MPLS L2VC)
+Ipv6Mtu       type(int)  reg(\d+) desc(IPv6 MTU)
+ControlFlap   type(bool) desc(控制翻转；`control-flap` 全库 15 次)
+OspfAuthMode  type(str)  reg(.+) desc(OSPF 认证模式)
+OspfNetworkType type(str) reg(\S+) desc(OSPF 网络类型)
+OspfCost      type(int)  reg(\d+) desc(OSPF 开销)
+OspfTimer     type(str)  reg(\S+) desc(OSPF 定时器)
+MplsLdpTimer  type(str)  reg(\S+) desc(MPLS LDP 定时器)
+IpRelayAddress type(str) reg(\S+) desc(IP 中继地址)
+NasLogicInterface type(str) reg(.+) desc(NAS 逻辑口（接口本级）)
+NasLogicAddress type(str) reg(\S+) desc(NAS 逻辑 IP（接口本级）)
+PortObserving type(str)  reg(\S+) desc(端口观测)
+PortMirroring type(str)  reg(\S+) desc(端口镜像方向)
+Negotiation   type(str)  reg(\S+) desc(自协商)
+ForwardMode   type(str)  reg(\S+) desc(转发模式)
+MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
+[rule]
+^interface\s+${Name}\s*$
+
+# ── 接口本级命令（缩进 1）─────────────────────────────
+# 以下规则全部靠 indent(1) 限定在「恰好 1 个前导空格」的行上。
+# 注意不能在这里再声明 indent()，缩进锚定是集合级属性，
+# 所以这一组规则与 bas 正文规则分属两个集合（见下方 Bas）。
+^ {1}description\s+${Description}\s*$
+^ {1}mtu\s+${Mtu}\s*$
+^ {1}speed\s+${Speed}\s*$
+^ {1}duplex\s+${Duplex}\s*$
+^ {1}undo shutdown\s*$          -> AdminStatus=up
+^ {1}shutdown\s*$               -> AdminStatus=down
+^ {1}undo dcn\s*$               -> Dcn=false
+^ {1}dcn\s*$                    -> Dcn=true
+^ {1}vlan-type\s+${VlanType}\s+${Dot1qVlan}\s*$
+^ {1}user-vlan\s+${UserVlan.Start}(?:\s+${UserVlan.End})?(?:\s+qinq\s+${UserVlan.QinQOuter}(?:\s+${UserVlan.QinQInner})?)?\s*$
+^ {1}carrier down-hold-time\s+${CarrierDownHoldTime}\s*$
+^ {1}ip binding vpn-instance\s+${IpBindingVpn}\s*$
+^ {1}ip urpf\s+${IpUrpf}\s*$
+^ {1}ipv6 enable\s*$            -> Ipv6Enable=true
+^ {1}undo ipv6 enable\s*$       -> Ipv6Enable=false
+^ {1}pppoe-server bind Virtual-Template\s+${PppoeTemplate}\s*$
+^ {1}eth-trunk\s+${EthTrunk}\s*$
+^ {1}mode\s+${LacpMode}\s*$
+^ {1}lacp timeout\s+${LacpTimeout}\s*$
+^ {1}statistic enable\s*$        -> Statistic.Enable=true
+^ {1}statistic mode\s+${Statistic.Mode}\s*$
+^ {1}qos car cir\s+${QosCar.Cir}(?:\s+pir\s+${QosCar.Pir})?(?:\s+cbs\s+${QosCar.Cbs})?(?:\s+pbs\s+${QosCar.Pbs})?\s*$
+^ {1}qos-profile\s+${QosProfile}\s*$
+^ {1}traffic-policy\s+${TrafficPolicy.Name}\s+${TrafficPolicy.Direction}\s*$
+^ {1}pim\s+${Pim.Mode}\s*$
+^ {1}pim hello-option dr-priority\s+${Pim.DrPriority}\s*$
+^ {1}igmp enable\s*$             -> Igmp.Enable=true
+^ {1}isis enable\s+${Isis.Enable}\s*$
+^ {1}isis circuit-type\s+${Isis.CircuitType}\s*$
+^ {1}isis circuit-level\s+${Isis.CircuitLevel}\s*$
+^ {1}isis cost\s+${Isis.Cost}\s*$
+^ {1}isis ipv6 enable(?:\s+\d+)?\s*$   -> Isis.Ipv6Enable=true
+^ {1}isis ldp-sync\s*$           -> Isis.LdpSync=true
+^ {1}isis timer\s+${Isis.HelloInterval}\s*$
+^ {1}default-password-template\s+${DefaultPasswordTemplate}\s*$
+^ {1}dhcp select\s+${DhcpSelect}\s*$
+^ {1}l2 binding\s+${L2Binding}\s*$
+^ {1}trust upstream\s+${TrustUpstream}\s*$
+^ {1}mpls\s*$                    -> Mpls=true
+^ {1}mpls ldp\s*$                -> MplsLdp=true
+^ {1}mpls l2vc\s+${MplsL2vc}\s*$
+^ {1}ipv6 mtu\s+${Ipv6Mtu}\s*$
+^ {1}igmp static-group\s+${Igmp.StaticGroup}\s*$
+^ {1}control-flap\s*$            -> ControlFlap=true
+^ {1}ospf authentication-mode\s+${OspfAuthMode}\s*$
+^ {1}vrrp vrid\s+(?P<Vrid>\d+)\s+priority\s+(?P<Priority>\d+)\s*$
+       -> Vrrp{Vrid,Priority}
+^ {1}vrrp vrid\s+(?P<Vrid>\d+)\s+virtual-ip\s+(?P<Address>\S+)\s*$
+       -> Vrrp{Vrid,VirtualIp{Address}}
+# 真实形态（3,291 次，只有 1 种）：
+#     track monitor-group JianKong trigger-down-weight 100
+# 即 `track <Kind> <Target> [trigger-down-weight N]`，**没有数字 ID**。
+# 旧模板写 `track ${Id} ${Type} ${Target}` 要求第二个 token 是数字，全库 0 命中。
+^ {1}track\s+(?P<Kind>\S+)(?:\s+(?P<Target>\S+))?(?:\s+trigger-down-weight\s+(?P<DownWeight>\d+))?\s*$
+       -> Track{Kind,Target,DownWeight}
+# `ip relay address` 缩进 1，只有这一种形态（165 次）。
+# 它曾挂在 IpAddress 集合下，靠栈里残留的 IpAddress 帧顺带命中；
+# 接口里没有 `ip address` 时 IpAddress 帧不存在 → 漏掉（实测 6 行）。
+^ {1}ip relay address\s+${IpRelayAddress}\s*$
+# `nas logic-port` / `nas logic-ip` 在缩进 1（接口本级）与缩进 2（bas 视图）都出现，
+# 两个缩进分属 Interfaces 与 Bas 两个集合，规则各写一份。
+^ {1}nas logic-port\s+${NasLogicInterface}\s*$
+       -> NasLogicInterface
+^ {1}nas logic-ip\s+${NasLogicAddress}\s*$
+^ {1}port-observing\s+${PortObserving}\s*$
+^ {1}isis ipv6 cost\s+${Isis.Ipv6Cost}(?:\s+level-\d+)?\s*$
+^ {1}isis timer ldp-sync\s+${Isis.LdpSyncTimer}\s*$
+^ {1}isis authentication-mode\s+${Isis.AuthMode}\s*$
+^ {1}mpls ldp timer\s+${MplsLdpTimer}\s*$
+^ {1}ospf network-type\s+${OspfNetworkType}\s*$
+^ {1}ospf cost\s+${OspfCost}\s*$
+^ {1}ospf timer\s+${OspfTimer}\s*$
+^ {1}port-mirroring\s+${PortMirroring}\s*$
+^ {1}negotiation\s+${Negotiation}\s*$
+^ {1}forward-mode\s+${ForwardMode}\s*$
+^ {1}mac-address\s+${MacAddress}\s*$
+
+  # ── 接口 IP（子层）────────────────────────────────
+  # 不声明 end：IpAddress 只承载 `ip address` / `ipv6 address` 两种行，
+  # 其余缩进 1 的命令匹配不上它的规则，会自然落到 Interfaces 本层。
+  # 实测即使栈里残留 IpAddress 帧，Bas 仍会按 coll.parent 正确挂到
+  # Interfaces 下，所以不需要为它编造 end 正则。
+  IpAddress type(list) start(^\s*ip(v6)? address) indent(1) desc(接口IP)
+  [value]
+  Address type(str) reg([^/\s]+) desc(地址)
+  Mask    type(str) reg(\S+) desc(掩码)
+  Family  type(str) reg(ipv4|ipv6) desc(地址族)
+  Mode    type(str) reg(\S+) desc(自动地址模式)
+  AddressType type(str) reg(sub) desc(地址类型)
+  [rule]
+  ^ {1}ip address\s+${Address}\s+${Mask}(?:\s+${AddressType})?\s*$   -> Family="ipv4"
+  ^ {1}ipv6 address\s+${Address}/${Mask}\s*$                              -> Family="ipv6"
+  ^ {1}ipv6 address\s+auto\s+${Mode}\s*$                                  -> Address="auto",Family="ipv6"
+  ^ {1}ip relay address\s+${Address}\s*$                                  -> Family="ipv4",Mask=""
+
+  # ── BAS 接入视图正文（缩进 2）──────────────────────
+  # 缩进 2 是 bas 子视图内部，必须与接口本级的同名命令分开建模。
+  # 实测缩进 2 共 53,161 行，`nas logic-port` 在缩进 1/2 都会出现。
+  Bas type(dict) start(^ {1}bas\s*$) indent(2) desc(BAS 视图)
+  [value]
+  AccessType    type(str) reg(\S+) desc(接入类型)
+  AuthDomain    type(str) reg(\S+) desc(认证域)
+  PreAuthDomain type(str) reg(\S+) desc(预认证域)
+  Method        type(str) reg(\S+) desc(认证方式)
+  NasLogicIp    type(list) desc(NAS 逻辑 IP)
+    Address type(str) reg(\S+) desc(逻辑 IP)
+  NasLogicPort  type(list) desc(NAS 逻辑口)
+    Interface type(str) reg(.+) desc(逻辑接口)
+  Option82      type(str) reg(.+) desc(Option82 插入)
+  # 10,462 个 bas 块里 arp-trigger 只出现 2,582 次（24.7%）、ip-trigger 2,570、
+  # arp-proxy 2,509 → 不给默认值，没出现就留空，不臆造 true。
+  ArpTrigger    type(bool) desc(ARP 触发)
+  IpTrigger     type(bool) desc(IP 触发)
+  ArpProxy      type(bool) desc(ARP 代理)
+  AccessDelay   type(int) reg(\d+) desc(接入延迟)
+  DelayMode     type(str) reg(\S+) desc(延迟模式)
+  UserDetect    type(dict) desc(用户探测)
+    Retransmit type(int) reg(\d+) desc(重传次数)
+    Interval   type(int) reg(\d+) desc(间隔秒)
+  VpnInstance   type(str) reg(\S+) desc(认证 VPN 实例)
+  DefaultPasswordTemplate type(str) reg(\S+) desc(默认密码模板)
+  NasPortType   type(str) reg(\S+) desc(NAS 端口类型)
+  [rule]
+  ^ {2}access-type\s+${AccessType}\s+default-domain\s+authentication\s+${AuthDomain}\s*$
+        -> AccessType,AuthDomain
+  ^ {2}access-type\s+${AccessType}\s+default-domain\s+pre-authentication\s+${PreAuthDomain}\s*$
+        -> AccessType,PreAuthDomain
+  ^ {2}access-type\s+${AccessType}\s*$
+  ^ {2}authentication-method\s+${Method}\s*$
+  ^ {2}nas logic-ip\s+${NasLogicIp.Address}\s*$
+  ^ {2}nas logic-port\s+${NasLogicPort.Interface}\s*$
+  ^ {2}client-option82\s+${Option82}\s*$
+  ^ {2}access-delay\s+${AccessDelay}(?:\s+${DelayMode})?\s*$
+  ^ {2}arp-trigger\s*$        -> ArpTrigger=true
+  ^ {2}ip-trigger\s*$         -> IpTrigger=true
+  ^ {2}arp-proxy\s*$          -> ArpProxy=true
+  ^ {2}user detect retransmit\s+${UserDetect.Retransmit}\s+interval\s+${UserDetect.Interval}\s*$
+  ^ {2}vpn-instance\s+${VpnInstance}\s*$
+  # `default-password-template` 只在 bas 正文出现（缩进 2，共 2,406 次，
+  # 仅 iptv / ottx 两个值）；接口本级的同名命令不存在，故只写这一份。
+  ^ {2}default-password-template\s+${DefaultPasswordTemplate}\s*$
+  ^ {2}nas-port-type\s+${NasPortType}\s*$
+
+# ── 静态路由 ─────────────────────────────────────────
+RouteStatics type(list) start(^ip route-static) desc(静态路由)
+[value]
+Prefix       type(str) reg(\S+) desc(前缀) option(Key)
+Mask         type(str) reg(\S+) desc(掩码) option(Key)
+NextHop      type(str) reg(\d{1,3}(?:\.\d{1,3}){3}|NULL0) desc(下一跳) option(Key)
+NextHopIface type(str) reg((?!NULL0)(?!\d{1,3}(?:\.\d{1,3}){3}(?:\s|$))[^\s]+) desc(出接口)
+Preference   type(int) reg(\d+) desc(优先级)
+Description  type(str) reg(.+) desc(描述)
+VpnInstance  type(str) reg(\S+) desc(所属 VPN 实例) option(Key)
+[rule]
+# ① vpn-instance 变体 · 纯下一跳
+^\s*ip\s+route-static\s+vpn-instance\s+${VpnInstance}\s+${Prefix}\s+${Mask}\s+${NextHop}
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?
+      \s*$
+      -> RouteStatics{VpnInstance,Prefix,Mask,NextHop,Preference,Description}
+# ② vpn-instance 变体 · 出接口（下一跳可选）
+^\s*ip\s+route-static\s+vpn-instance\s+${VpnInstance}\s+${Prefix}\s+${Mask}\s+(?P<NextHopIface>(?!NULL0)(?!\d{1,3}(?:\.\d{1,3}){3}(?:\s|$))[^\s]+)
+      (?:\s+${NextHop})?
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?
+      \s*$
+      -> RouteStatics{VpnInstance,Prefix,Mask,NextHopIface,NextHop,Preference,Description}
+# ③ plain 变体 · 纯下一跳
+^\s*ip\s+route-static\s+(?!vpn-instance\s)${Prefix}\s+${Mask}\s+${NextHop}
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?
+      \s*$
+      -> RouteStatics{Prefix,Mask,NextHop,Preference,Description}
+# ④ plain 变体 · 出接口（下一跳可选）
+^\s*ip\s+route-static\s+(?!vpn-instance\s)${Prefix}\s+${Mask}\s+(?P<NextHopIface>(?!NULL0)(?!\d{1,3}(?:\.\d{1,3}){3}(?:\s|$))[^\s]+)
+      (?:\s+${NextHop})?
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?
+      \s*$
+      -> RouteStatics{Prefix,Mask,NextHopIface,NextHop,Preference,Description}
+
+# ── VPN 实例 ─────────────────────────────────────────
+# 真实结构（注意 ipv4-family / ipv6-family 是**真实子层**，
+# RD 与 vpn-target 都挂在族底下，不是挂在实例本级）：
+#
+#     ip vpn-instance ZiJian-VPN-ZhuanXian-XinAn
+#      ipv4-family
+#       route-distinguisher 64650:100000008
+#       vpn-target 64650:100000008 export-extcommunity
+#      ipv6-family
+#       route-distinguisher 64650:100000008
+#       vpn-target 64650:100000008 export-extcommunity
+#
+# 旧模板把 vpn-target 平铺在实例上，导致 v4/v6 的 target 混成一堆分不出族。
+VpnInstances type(list) start(^ip vpn-instance) end(^#$) end_indent(0) desc(VPN实例)
+[value]
+Name               type(str) reg(\S+) desc(名称) option(Key)
+Description        type(str) reg(.+) desc(描述)
+[rule]
+^ip vpn-instance\s+${Name}\s*$
+^ {1}description\s+${Description}\s*$
+
+  # ── 地址族（子层）──────────────────────────────────
+  # 现网实测：`ipv4-family` 280 次、`ipv6-family` 20 次，**都在缩进 1**，
+  # 且两者下面的 RD / vpn-target 都是缩进 2 —— 光看缩进和规则前缀
+  # 区分不了族。旧写法把两条 `^ {2}route-distinguisher` 都写在
+  # VpnInstances 本层，结果 20 个 ipv6-family 的配置全被写进 Ipv4Family。
+  #
+  # 改成两个独立子集合，靠 start 锚定族首行、靠栈的先后顺序天然分离：
+  # 进入 ipv6-family 后，栈顶就是 VpnIpv6Family，{2} 规则只会在它里面匹配。
+  VpnIpv4Family type(dict) start(^ {1}ipv4-family\s*$) indent(2) desc(IPv4 地址族)
+  [value]
+  RouteDistinguisher type(str) reg(\S+) desc(RD)
+  ApplyLabel         type(str) reg(\S+) desc(标签模式)
+  VpnTargets         type(list) desc(VPN 目标)
+    Rd        type(str) reg(\S+) desc(RD)
+    Direction type(str) reg(\S+) desc(方向)
+  [rule]
+  ^ {2}route-distinguisher\s+${RouteDistinguisher}\s*$
+  ^ {2}apply-label\s+${ApplyLabel}\s*$
+  ^ {2}vpn-target\s+${VpnTargets.Rd}\s+${VpnTargets.Direction}\s*$
+
+  VpnIpv6Family type(dict) start(^ {1}ipv6-family\s*$) indent(2) desc(IPv6 地址族)
+  [value]
+  RouteDistinguisher type(str) reg(\S+) desc(RD)
+  ApplyLabel         type(str) reg(\S+) desc(标签模式)
+  VpnTargets         type(list) desc(VPN 目标)
+    Rd        type(str) reg(\S+) desc(RD)
+    Direction type(str) reg(\S+) desc(方向)
+  [rule]
+  ^ {2}route-distinguisher\s+${RouteDistinguisher}\s*$
+  ^ {2}apply-label\s+${ApplyLabel}\s*$
+  ^ {2}vpn-target\s+${VpnTargets.Rd}\s+${VpnTargets.Direction}\s*$
+
+# ── BGP ──────────────────────────────────────────────
+# 注意 `peer` 有两种语义，必须分开：
+#   peer RR-L2 description …          ← 组级配置（第一个 token 是组名，非 IP）
+#   peer 218.200.1.10 as-number 64650 ← 邻居配置（第一个 token 是 IP）
+# 旧模板混在一个命名空间，134 条里只有 83 条有 AS 号。
+Bgp type(list) start(^bgp\s+) end(^#$) end_indent(0) desc(BGP)
+[value]
+AsNumber       type(int) reg(\d+) desc(AS 号) option(Key)
+RouterId       type(str) reg(\S+) desc(Router ID)
+# 现网 20 个 BGP 块：disable 17 次 / enable 3 次，两种形态都有 →
+# default(true) 不成立，去掉；没配 = 未声明，不臆造
+Private4ByteAs type(bool) desc(私有 4 字节 AS)
+Groups         type(list) desc(邻居组)
+  Name        type(str) reg(\S+) desc(组名)
+  Type        type(str) reg(internal|external) desc(类型)
+  Description type(str) reg(.+) desc(描述)
+  ConnectInterface type(str) reg(\S+) desc(连接接口)
+  PasswordType type(str) reg(\S+) desc(密码类型)
+  Password    type(secret) reg(.+) desc(密码)
+Networks       type(list) desc(宣告网段)
+  Prefix type(str) reg(\S+) desc(前缀)
+  Mask   type(str) reg(\S+) desc(掩码)
+[rule]
+^bgp\s+${AsNumber}\s*$
+^ {1}router-id\s+${RouterId}\s*$
+^ {1}private-4-byte-as disable\s*$  -> Private4ByteAs=false
+^ {1}private-4-byte-as enable\s*$   -> Private4ByteAs=true
+^ {2}network\s+${Networks.Prefix}\s+${Networks.Mask}\s*$
+       -> Networks{Prefix,Mask}
+
+  # ── BGP 邻居组（子层：同一个组的 server 端多行按 Key 合并）────
+  # 组级配置的三种形态：`group <name> internal|external`、
+  # `peer <组名> description|connect-interface|password …`。
+  # 组名不是 IP，用它把「组」与「IP 邻居」（BgpPeers）区分开。
+  # 为什么必须是子集合而不是 Bgp.Groups 这种嵌套 list：
+  #   option(Key) 只能加在集合顶层字段，嵌套字段上加会直接 lint 报错；
+  #   靠子集合才能在 commit 时走 merge_by_key，把同一组的多行合成一条。
+  BgpGroups type(list) start(^ {1}(?:group\s+\S+\s+(?:internal|external)|peer\s+(?![0-9A-Fa-f:]*\d{1,3}(?:\.\d{1,3}){3})\S+\s+(?:description|connect-interface|password)\s)) indent(1) desc(BGP邻居组)
+  [value]
+  Name             type(str) reg(\S+) desc(组名) option(Key)
+  Type             type(str) reg(internal|external) desc(类型)
+  Description      type(str) reg(.+) desc(描述)
+  ConnectInterface type(str) reg(\S+) desc(连接接口)
+  PasswordType     type(str) reg(\S+) desc(密码类型)
+  Password         type(secret) reg(.+) desc(密码)
+  [rule]
+  ^ {1}group\s+${Name}\s+${Type}\s*$                            -> BgpGroups{Name,Type}
+  ^ {1}peer\s+${Name}\s+description\s+${Description}\s*$                  -> BgpGroups{Name,Description}
+  ^ {1}peer\s+${Name}\s+connect-interface\s+${ConnectInterface}\s*$
+         -> BgpGroups{Name,ConnectInterface}
+  ^ {1}peer\s+${Name}\s+password\s+cipher\s+${Password}\s*$
+         -> BgpGroups{Name,PasswordType="cipher",Password}
+
+  # ── BGP 邻居（子层：同一 peer 的多行按 Key 合并）──────
+  # start 只认「第一个 token 是 IP」的 peer 行 —— 组级配置（peer RR-L2 …）
+  # 在上一层的 Groups 里已经收走了，这里不能再混进来。
+  BgpPeers type(list) start(^ {1}peer\s+(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f:]+)\s+as-number) indent(1) desc(BGP邻居)
+  [value]
+  Peer             type(str) reg(\S+) desc(对端) option(Key)
+  AsNumber         type(int) reg(\d+) desc(对端 AS)
+  Group            type(str) reg(\S+) desc(所属组)
+  Description      type(str) reg(.+) desc(描述)
+  ConnectInterface type(str) reg(\S+) desc(连接接口)
+  PasswordType     type(str) reg(\S+) desc(密码类型)
+  Password         type(secret) reg(.+) desc(密码)
+  [rule]
+  ^ {1}peer\s+${Peer}\s+as-number\s+${AsNumber}\s*$              -> BgpPeers{Peer,AsNumber}
+  ^ {1}peer\s+${Peer}\s+group\s+${Group}\s*$                      -> BgpPeers{Peer,Group}
+  ^ {1}peer\s+${Peer}\s+description\s+${Description}\s*$                    -> BgpPeers{Peer,Description}
+  ^ {1}peer\s+${Peer}\s+connect-interface\s+${ConnectInterface}\s*$ -> BgpPeers{Peer,ConnectInterface}
+  ^ {1}peer\s+${Peer}\s+password\s+cipher\s+${Password}\s*$       -> BgpPeers{Peer,PasswordType="cipher",Password}
+
+# ── ACL ──────────────────────────────────────────────
+# 现网口径（10 台）：ACL rule 7,755 行 / 103 种形态。
+# 旧模板穷举 permit/deny × source/destination 只覆盖 18.3%；
+# 下面这条可选组规则覆盖 100%。
+# 注意 Sequence 不设 option(Required)：拿不到序号宁可少字段，也别丢整条规则。
+Acls type(list) start(^acl number) end(^#$) end_indent(0) desc(ACL)
+[value]
+Number      type(int) reg(\d+) desc(ACL 号) option(Key)
+Name        type(str) reg(\S+) desc(ACL 名)
+Description type(str) reg(.+) desc(描述)
+[rule]
+^acl number\s+${Number}(?:\s+name\s+${Name})?\s*$
+^ {1}description\s+${Description}\s*$
+
+  # ── ACL 规则（子层）────────────────────────────────
+  # ⚠️ 可选组的顺序决定成败：`${Protocol}` 用的是宽字符类，如果排在
+  #    `source` / `destination` 前面，会把关键字当协议名吃掉
+  #    （`rule 5 permit source 1.1.1.1 0` → Protocol="source"，Source 全丢）。
+  #    所以这里用**负向断言**把关键字排除在协议位之外。
+  AclRules type(list) start(^ {1}rule\s) indent(1) desc(ACL规则)
+  [value]
+  Sequence        type(int)  reg(\d+) desc(序号) option(Key)
+  Action          type(str)  reg(permit|deny) desc(动作)
+  Protocol        type(str)  reg([a-z][a-z0-9-]*) desc(协议)
+  VpnInstance     type(str)  reg(\S+) desc(匹配 VPN 实例)
+  Source          type(str)  reg(\S+) desc(源地址)
+  SourceMask      type(str)  reg(\S+) desc(源掩码)
+  UserGroup       type(str)  reg(\S+) desc(源用户组)
+  SourcePort      type(str)  reg(.+) desc(源端口)
+  Destination     type(str)  reg(\S+) desc(目的地址)
+  DestinationMask type(str)  reg(\S+) desc(目的掩码)
+  DestPort        type(str)  reg(.+) desc(目的端口)
+  TimeRange       type(str)  reg(\S+) desc(时间段)
+  [rule]
+  ^ {1}rule\s+${Sequence}\s+${Action}(?:\s+(?!source\b|destination\b|source-port\b|destination-port\b|vpn-instance\b|time-range\b|counting\b|fragment\b)${Protocol})?(?:\s+vpn-instance\s+${VpnInstance})?(?:\s+source\s+(?:user-group\s+${UserGroup}|${Source}(?:\s+${SourceMask})?))?(?:\s+source-port\s+(?:eq|range)\s+${SourcePort})?(?:\s+destination\s+(?:ip-address\s+)?${Destination}(?:\s+${DestinationMask})?)?(?:\s+destination-port\s+(?:eq|range)\s+${DestPort})?(?:\s+time-range\s+${TimeRange})?\s*$
+        -> AclRules{Sequence,Action,Protocol,VpnInstance,UserGroup,Source,SourceMask,SourcePort,Destination,DestinationMask,DestPort,TimeRange}
+  ^ {1}rule\s+${Sequence}\s*$    -> AclRules{Sequence}
+
+# ── NQA ──────────────────────────────────────────────
+# 现网两种块首：`nqa test-instance <name> <id>`（1234 次）
+#               `nqa twamp-light`（20 次）
+# 旧模板把 name 丢了（填充率 0%），这里按真实形态拆。
+Nqas type(list) start(^nqa\s) end(^#$) end_indent(0) desc(NQA)
+[value]
+Name        type(str) reg(\S+) desc(名称) option(Key)
+InstanceId  type(str) reg(\S+) desc(实例 ID)
+Type        type(str) reg(\S+) desc(类型)
+TestType    type(str) reg(\S+) desc(测试类型)
+Destination type(str) reg(\S+) desc(目的地址)
+ProbeCount  type(int) reg(\d+) desc(探测次数)
+DataSize    type(int) reg(\d+) desc(报文大小)
+VpnInstance type(str) reg(\S+) desc(所属 VPN 实例)
+[rule]
+^nqa\s+test-instance\s+${Name}\s+${InstanceId}\s*$
+^nqa\s+${Type}(?:\s+(?P<Name>\S+))?\s*$
+^ {1}test-type\s+${TestType}\s*$
+^ {1}destination-address\s+(?:ipv4\s+|ipv6\s+)?${Destination}\s*$
+^ {1}probe-count\s+${ProbeCount}\s*$
+^ {1}datasize\s+${DataSize}\s*$
+^ {1}vpn-instance\s+${VpnInstance}\s*$
+
+  # ── NQA 会话（子层）──────────────────────────────
+  # 真实缩进是 2（`nqa twamp-light` → ` responder` → `  test-session`），
+  # 不是 1。这里不写 indent()：会话行全库只有一种形态，
+  # 用 start/end 的隐式出栈就够，写 indent 反而容易绑死厂商缩进。
+  NqaSessions type(list) start(^\s*test-session\s) desc(NQA会话)
+  [value]
+  SessionId          type(int) reg(\d+) desc(会话号) option(Key)
+  LocalIp            type(str) reg(\S+) desc(本地 IP)
+  RemoteIp           type(str) reg(\S+) desc(远端 IP)
+  LocalPort          type(int) reg(\d+) desc(本地端口)
+  RemotePort         type(int) reg(\d+) desc(远端端口)
+  LinkBundleInterface type(str) reg(\S+) desc(绑定接口)
+  [rule]
+  ^\s*test-session\s+${SessionId}\s+local-ip\s+${LocalIp}\s+remote-ip\s+${RemoteIp}
+        \s+local-port\s+${LocalPort}\s+remote-port\s+${RemotePort}
+        \s+link-bundle-interface\s+${LinkBundleInterface}\s*$
+        -> NqaSessions{SessionId,LocalIp,RemoteIp,LocalPort,RemotePort,LinkBundleInterface}

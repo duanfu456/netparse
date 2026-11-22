@@ -10,3 +10,6 @@ dist/
 build/
 dist/
 *.spec
+# skill 包内的二进制与产物（打包时由脚本生成，不进 git）
+skills/netparse/netparse.exe
+skills/netparse/**/batch_out/
