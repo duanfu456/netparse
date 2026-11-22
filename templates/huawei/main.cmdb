@@ -46,13 +46,13 @@
 # ══════════════════════════════════════════════════════════════════
 
 # ── 功能组引入 ──
-from 00-device.cmdb import *
-from 01-interfaces.cmdb import *
-from 02-routes.cmdb import *
-from 03-vpn.cmdb import *
-from 04-bgp.cmdb import *
-from 05-acl.cmdb import *
-from 06-nqa.cmdb import *
-from 07-static-user.cmdb import *
-from 08-qos.cmdb import *
+from 00-device import *
+from 01-interfaces import *
+from 02-routes import *
+from 03-vpn import *
+from 04-bgp import *
+from 05-acl import *
+from 06-nqa import *
+from 07-static-user import *
+from 08-qos import *
 

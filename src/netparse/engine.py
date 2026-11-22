@@ -316,6 +316,8 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks,
             m_from = re.match(r"^from\s+(\S+)\s+import\s+(.+)$", st)
             if m_from:
                 rel, names_s = m_from.group(1), m_from.group(2)
+                if not os.path.splitext(rel)[1]:
+                    rel += ".cmdb"          # from x == from x.cmdb
                 sub = os.path.normpath(
                     os.path.join(os.path.dirname(tpath), rel))
                 if not os.path.isfile(sub):
@@ -329,6 +331,8 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks,
                 continue
             if m_imp:
                 rel = m_imp.group(1).strip()
+                if not os.path.splitext(rel)[1]:
+                    rel += ".cmdb"          # import x == import x.cmdb
                 sub = os.path.normpath(
                     os.path.join(os.path.dirname(tpath), rel))
                 if not os.path.isfile(sub):

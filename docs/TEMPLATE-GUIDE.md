@@ -1227,16 +1227,16 @@ outbound / 混合 / user-queue 五种形态全量验证通过。
 **语法**（仅段外，文件顶部）：
 
 ```text
-import interfaces.cmdb                    ← 整组引入
-from qos.cmdb import *                    ← 全组（通配）
-from routes.cmdb import RouteStatics      ← 选择导入（子集合随父，不能单拆子集合）
+import interfaces                        ← 整组引入（.cmdb 后缀可省略）
+from qos import *                         ← 全组（通配）
+from routes import RouteStatics           ← 选择导入（子集合随父，不能单拆子集合）
 ```
 
 **目录形态**：
 
 ```text
 templates/huawei/
-├─ main.cmdb            ← 入口：from 各组 import *
+├─ main.cmdb            ← 入口：from 各组 import *（.cmdb 后缀可省略）
 ├─ 00-device.cmdb       Device + [python_file] transforms_huawei.py
 ├─ 01-interfaces.cmdb   Interfaces（92 字段全家桶）
 ├─ 02-routes.cmdb / 03-vpn.cmdb / 04-bgp.cmdb / 05-acl.cmdb
@@ -1256,5 +1256,5 @@ templates/huawei/
 顶层集合追加进同一条流水线；运行期与单文件完全一致（import 只决定组在不在，
 规则决定数据是什么，两者正交）。
 
-**实战验证**：`templates/huawei/main.cmdb`（9 组）与单文件 `huawei-vrp.cmdb`
+**实战验证**：`templates/huawei/main.cmdb`（9 组，`.cmdb` 后缀可省略）与单文件 `huawei-vrp.cmdb`
 对同一配置的输出**逐字节一致**。

@@ -1,0 +1,10 @@
+feat(engine): import/from 支持省略 .cmdb 后缀（用户建议）
+
+- 无后缀：from dev import * / import qos（引擎自动补 .cmdb）
+- 带后缀：from dev.cmdb import *（兼容保留）
+- main.cmdb 示例改用无后缀写法
+- 文档同步（GUIDE 场景 18 / CHEATSHEET 铁律 4 / SKILL）
+- exe 重打包（含后缀省略功能）；skills 包与交付目录同步
+
+验证：无后缀/带后缀双写法解析一致；回归/守恒/transform 全绿；
+交付目录 exe 无后缀 main 验证通过

@@ -72,7 +72,7 @@ Pwd         type(secret) reg(.+)             desc(密码，输出为 ******)
 3. 多 target 用 `;` 分隔：`-> In{Cir,Pir};Out{Cir,Pir}`（一条规则同时写两个
    集合/字段组）。不要用空格或逗号——逗号已被 members/assigns 占用；
    target 成员支持引用赋值 `Out{Cir=In.Cir}`（键=捕获组路径）
-4. 模块化：文件顶部 `import x.cmdb` / `from x.cmdb import *|集合名`；
+4. 模块化：文件顶部 `import x` / `from x import *|集合名`（`.cmdb` 后缀可省略）；
    路径相对当前文件；跨文件集合同名=错误；子集合不能脱离父单独 import
 5. `secret` 字段不能加 `func=`；`func=` 引用必须已定义（lint 会查）
 5. 精确缩进锚定：正文行前缀写 `^ {1}` / `^ {2}`（华为 1 空格、中兴 2 空格），
