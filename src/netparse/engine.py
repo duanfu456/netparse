@@ -1178,6 +1178,14 @@ def _filter_fields(results, fields, coll_by_name):
                     norm[c] = set()
                 norm[c].add(f)
 
+    # 引用了不存在的集合名 → 报错并列出可用名（拼错静默吞数据比报错更糟）
+    known = set(coll_by_name.keys())
+    unknown = set(norm.keys()) - known
+    if unknown:
+        raise ValueError(
+            "fields 引用了不存在的集合: %s（可用集合: %s）"
+            % ("、".join(sorted(unknown)), "、".join(sorted(known))))
+
     out = {}
     for cname, records in results.items():
         allowed = norm.get(cname, "__absent__")
