@@ -252,10 +252,12 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks,
     返回：实际并入的顶层集合名列表。
     """
     tpath = os.path.abspath(path)
-    if tpath in seen_paths:
+    if tpath in seen_paths["on_stack"]:
         raise TemplateFileError(
             "%s: 循环 include/import 检测到（已在解析链中）" % path)
-    seen_paths.add(tpath)
+    if tpath in seen_paths["done"]:
+        return []                # 菱形依赖：已完整加载过 → 幂等跳过
+    seen_paths["on_stack"].add(tpath)
 
     colls_before = len(colls)
     stack = []
@@ -481,13 +483,17 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks,
     else:
         merged_names = [tc.name for tc in top_colls]
 
-    # ── 同名冲突检测（跨文件顶层集合）──
+    # ── 同名冲突检测（跨文件顶层集合；已完成加载的文件跳过 → 不重复检测）──
+    if tpath in seen_paths["done"]:
+        return []
     for nm in merged_names:
         if nm in imported_names and imported_names[nm] != tpath:
             raise TemplateFileError(
                 "集合 %s 重名：%s 与 %s 都定义了它（同一解析对象禁止两份定义）"
                 % (nm, imported_names[nm], tpath))
         imported_names[nm] = tpath
+    seen_paths["on_stack"].discard(tpath)
+    seen_paths["done"].add(tpath)
     return merged_names
 
 
@@ -495,7 +501,7 @@ def parse_template(path):
     colls = []
     py_file_lines = []   # [python_file] 段的路径行（声明顺序）
     py_blocks = []       # [python] 段代码块（物理顺序，处理时统一按出现顺序执行）
-    seen_paths = set()
+    seen_paths = {"on_stack": set(), "done": set()}
     imported_names = {}
     _parse_template_file(path, colls, py_file_lines, py_blocks,
                          seen_paths, imported_names, None)
@@ -1195,7 +1201,10 @@ def _filter_fields(results, fields, coll_by_name):
             for k, v in obj.items():
                 path = (prefix + "." + k) if prefix else k
                 fld = cdef.all_fields.get(path)
-                is_list_or_dict = isinstance(v, (list, dict)) and fld is not None
+                # 子集合/视图（dict 或 list 容器字段）被点名 → 整棵子树保留
+                if prefix == "" and k in keep and isinstance(v, (list, dict)):
+                    row[k] = v
+                    continue
                 if isinstance(v, dict):
                     sub = prune_deep(v, path)
                     if sub:
