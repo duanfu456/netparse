@@ -7,6 +7,7 @@
 
 | 版本 | 变更 |
 |---|---|
+| v6（2026-11-22） | **分发形态完成**：PyInstaller 单文件 exe（`dist/netparse.exe` ~7MB，UTF-8 强制输出，Windows 无 Python 直接跑）；`skills/netparse/` 自包含 AI skill 分发包（exe + 模板 + 速查文档 + SKILL.md，拷进 AI 工具 skills 目录即用）；CLI parse 支持配置文件夹批量（每文件一个 JSON）；indent / end_indent 深度文档化（写入 CHEATSHEET 铁律与 SKILL） |
 | v5（2026-11-21） | **transform 机制落地**：字段级 `func=` + `[python]`/`[python_file]` 双段（相对模板路径，自包含分发）；签名 `def f(value, record=None)`；双执行路径（捕获值 / commit 派生补算）；lint 五条新检查；华为模板接入 `iface_type`——接口类型 0% → **100%**（21,427 接口）。另：编辑器（高亮/补全/折叠/试运行/保存守门）、CLI 尾部放宽自动补齐。详见 `TEMPLATE-GUIDE.md` 场景 16 与 `.devforge/spec/changes/transform-func/design.md` |
 | v4（2026-11-20） | 按纯缩进模型重写华为模板（接口块内覆盖率 30.8% → **100%**）；引擎新增 `indent(n)` / `end_indent(n)`（均 opt-in）；修 6 个 bug（5 引擎 + 1 模板侧）；去掉 7 处 `default` 造假。详见 `TEMPLATE-GUIDE.md` 第 8 节 |
 | v3 | 修正 12 处文档与现状不符；澄清「作用域与文件排版无关」；确定真实交付物与覆盖边界；补与现成方案的对比；路线重排为三批次 + 两个决定性实验 |
@@ -816,6 +817,9 @@ netparse/                      ← 已规整为 Python 库（pyproject.toml，�
 │     ├─ diff.py            ← netparse diff（19 列三栏）
 │     ├─ route_forms.py     ← netparse route-forms
 │     └─ readonly.py        ← netparse readonly
+├─ packaging/entry.py       ← PyInstaller 入口（UTF-8 强制输出；--onefile 打包）
+├─ dist/netparse.exe        ← 打包产物（~7MB 单文件，Windows 无 Python 环境直接跑）
+├─ skills/netparse/         ← AI 工具自包含 skill 分发包（netparse.exe + templates/ + docs/ + SKILL.md）
 ├─ editor/                  ← 模板 Web 编辑器（python editor/server.py，端口 8765）
 │  ├─ server.py            ← 零依赖 http 服务：/api/lint /api/parse /api/parse-frag /api/save
 │  └─ index.html           ← 三栏 UI：高亮编辑 + lint 面板 + 解析结果/命中明细

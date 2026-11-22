@@ -114,6 +114,7 @@ AdminStatus type(str) reg(up|down) desc(管理状态)
 | `docs/TEMPLATE-GUIDE.md` | 深入模板语法 | 完整语法 + 16 个场景手册 + 真实审查数据（第 8 节） |
 | `docs/CLI-GUIDE.md` | 命令行用户 | parse / lint / diff / readonly 全参数 + 管道约定 |
 | `docs/PYTHON-GUIDE.md` | 集成开发者 | 库调用两步模型、批量解析、脱敏控制、transform 警告 |
+| `skills/netparse/SKILL.md` | AI 工具用户 | 自包含 skill 说明（exe 调用约定/模板铁律/高频任务剧本） |
 | `docs/FINAL-plan.md` | 架构/评审 | 总方案：架构 / 实测数据 / 缺口 / 路线 |
 
 2026-11 模板审查的实测数据与设计原则见 TEMPLATE-GUIDE 第 8 节；
@@ -148,6 +149,8 @@ tests/                 单元测试与 fixture 回归
 | 块数守恒 | 6 类块 × 20 台逐台核对全部一致 |
 | 脱敏 | 引擎层 `type(secret)` + 密文形态兜底（华为 + 中兴密文形态），全量零明文 |
 | transform | 字段级 `func=` + `[python]`/`[python_file]` 双段；接口类型 0% → **100%**（21,427 接口） |
+| exe 打包 | `dist/netparse.exe`（~7MB 单文件，PyInstaller），接收方无需 Python |
+| AI skill 分发包 | `skills/netparse/` 自包含：exe + 模板 + 速查文档 + SKILL.md，拷进 AI 工具 skills 目录即用 |
 | 编辑器 | 本地 Web（`python editor/server.py`）：lint 实时检查、`${` 字段补全、集合折叠、选中试运行、保存守门 |
 | 台账 19 列 | 8/19 完整对齐，其余列的模板规则已补，**台账口径复测未跑** |
 

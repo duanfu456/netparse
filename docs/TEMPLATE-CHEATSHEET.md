@@ -42,7 +42,8 @@ Xxx type(list) start(^interface\s+) end(^#$) end_indent(0) indent(1) desc(说明
 | `type(dict)` | 每接口一条（Bas、QosCar） |
 | `start(...)` | 进入条件；**不写** = 栈底常驻层（规则始终兜底） |
 | `end(...)` + `end_indent(n)` | 块结束分隔符；`end_indent(0)`=顶格 `#` 关本层 |
-| `indent(n)` | 规则只吃缩进 n 的行（同命令多层出现时分流用） |
+| `indent(n)` | 规则只吃缩进 n 的行（同命令多层出现时分流用）——"进门要几空格" |
+| `end_indent(n)` | 本层只被「恰好 n 个前导空格」的 `#` 关闭——"出门的 # 要几空格"。不声明 = 任意 `#` 都能关（旧行为，嵌套视图会跨层误关） |
 
 ## 字段声明（速查表）
 
