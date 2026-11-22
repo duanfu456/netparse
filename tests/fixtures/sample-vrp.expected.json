@@ -60,13 +60,13 @@
     {
       "Prefix": "103.85.74.96",
       "Mask": "255.255.255.224",
-      "NextHop": "NULL0",
+      "NextHopIface": "NULL0",
       "Description": "huwang-fengdu"
     },
     {
       "Prefix": "111.18.27.196",
       "Mask": "255.255.255.252",
-      "NextHop": "NULL0",
+      "NextHopIface": "NULL0",
       "Preference": 220,
       "Description": "JiaKuanVIP1"
     }
