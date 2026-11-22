@@ -630,7 +630,7 @@ Out type(dict) desc(出方向限速；无方向行 = 从 In 复制（out_* trans
       \s+green\s+${In.Green}
       (?:\s+yellow\s+${In.Yellow})?
       \s+red\s+${In.Red}(?!\s+(?:inbound|outbound))\s*$
-      -> In{Cir,Pir,Cbs,Pbs,Green,Yellow,Red}
+      -> In{Cir,Pir,Cbs,Pbs,Green,Yellow,Red};Out{Cir=In.Cir,Pir=In.Pir,Cbs=In.Cbs,Pbs=In.Pbs,Green=In.Green,Yellow=In.Yellow,Red=In.Red}
 # inbound 行：只写 In
 ^ {1}car\s+cir\s+${In.Cir}
       (?:\s+pir\s+${In.Pir})?

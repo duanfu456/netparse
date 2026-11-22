@@ -1122,7 +1122,19 @@ def _apply(fr, line, compiled, last, from_start=False, ctx=None):
                 for mem in members:
                     if "=" in mem:
                         k2, _, v2 = mem.partition("=")
-                        obj[k2.strip()] = parse_literal(v2)
+                        v2 = v2.strip()
+                        # 引用赋值：右侧是裸标识符（捕获组/字段路径）→ 取捕获值
+                        # 例：Out{Cir=In.Cir} → obj["Cir"] = In.Cir 捕获组的值
+                        if re.fullmatch(r"[A-Za-z_][\w.]*", v2):
+                            grp = (cr.path_groups.get(v2)
+                                   or cr.path_groups.get(v2))
+                            if grp and cr.group_paths.get(grp) in masked:
+                                obj[k2.strip()] = masked[cr.group_paths[grp]]
+                            elif v2 in masked:
+                                obj[k2.strip()] = masked[v2]
+                            # 引用不存在 → 不写该键（与 members 缺成员语义一致）
+                        else:
+                            obj[k2.strip()] = parse_literal(v2)
                     else:
                         # 成员名先按完整路径找，再按相对 base 的路径找
                         grp = cr.path_groups.get(mem) or cr.path_groups.get(base + "." + mem)
