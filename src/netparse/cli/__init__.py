@@ -38,6 +38,10 @@ def build_parser():
     p.add_argument("--mask-value", default=None, help="掩码串（默认 ******）")
     p.add_argument("--no-mask-heuristic", action="store_true",
                    help="关闭 L2 密文形态兜底，只保留模板 type(secret) 的精确遮蔽")
+    p.add_argument("--fields", default=None,
+                   help="字段白名单（输出层裁剪）：集合=字段1,字段2；多组用 ; 分隔"
+                        "（例：Interfaces=Name,Type,IpAddress;RouteStatics=Prefix,Mask,NextHop；"
+                        "集合名单独出现=保留全部字段；Key 字段自动保留）")
 
     # ── lint ──
     p = sub.add_parser("lint", help="模板体检（不解析配置）")

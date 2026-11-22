@@ -934,7 +934,7 @@ def apply_defaults(rec, coll):
         set_path(rec, segs, convert(val, fld))
 
 
-def run(colls, lines, trace=None):
+def run(colls, lines, trace=None, fields=None):
     """trace: 可选列表，传入后记录每一行的匹配情况 (行号, 原始行, 命中集合名或 None)。
 
     这是 lint「命令覆盖率」统计的数据来源——必须来自真实匹配过程，
@@ -943,6 +943,13 @@ def run(colls, lines, trace=None):
     每次调用会把脱敏统计（masking.STATS）复位 → 读完即"本次运行"的统计。
 
     transform 警告收集在 colls.transform_warnings（每次 run 覆盖）。
+
+    fields: 可选字段白名单（输出层裁剪，解析始终全量）。
+      形态 1  dict: {"Interfaces": {"Name","Type","IpAddress"}, "Bgp": None}
+              值 None/空集合 = 保留该集合全部字段
+      形态 2  list: ["Interfaces.Name", "Interfaces.Type", "Bgp"]（点路径前缀）
+      语义：未列出的集合 → 整个不输出；列出的集合未列字段 → 裁掉；
+            Key 字段自动保留（记录身份不能丢）。
     """
     STATS.reset()
     registry = getattr(colls, "registry", {})
@@ -1139,7 +1146,82 @@ def run(colls, lines, trace=None):
 
     # 顶层集合不做 Key 合并：Key 聚合的语义是「同一父元素下的子记录合并」，
     # 顶层集合没有父元素，重名对象（如 Nokia 不同 router 下的同名接口）必须各留一条。
+    if fields:
+        return _filter_fields(results, fields, coll_by_name)
     return results
+
+
+def _filter_fields(results, fields, coll_by_name):
+    """字段白名单过滤（输出层）。解析始终全量，这里只裁剪视图。
+
+    fields 归一化为 {集合名: 允许字段名集合 or None(全部)}。
+    Key 字段自动保留；子集合字段用 点路径（IpAddress.Address）声明。
+    """
+    # 归一化
+    norm = {}
+    if isinstance(fields, dict):
+        for coll_name, flds in fields.items():
+            norm[coll_name] = set(flds) if flds else None
+    else:   # list：点路径前缀
+        for item in fields:
+            c, _, f = item.partition(".")
+            if c not in norm:
+                norm[c] = None
+            if f:
+                if norm[c] is None:
+                    norm[c] = set()
+                norm[c].add(f)
+
+    out = {}
+    for cname, records in results.items():
+        allowed = norm.get(cname, "__absent__")
+        if allowed == "__absent__":
+            continue                     # 未列出的集合 → 不输出
+        cdef = coll_by_name.get(cname)
+        if allowed is None or cdef is None:
+            out[cname] = records
+            continue
+        # Key 字段自动并入
+        keep = set(allowed)
+        for kf in (cdef.key_fields or []):
+            keep.add(kf.split(".")[-1])
+        def prune(rec):
+            return {k: v for k, v in rec.items()
+                    if k in keep or (cdef.all_fields.get(k) is not None
+                                     and "." not in k and k not in keep
+                                     and False)}
+        def prune_deep(obj, prefix=""):
+            row = {}
+            for k, v in obj.items():
+                path = (prefix + "." + k) if prefix else k
+                fld = cdef.all_fields.get(path)
+                is_list_or_dict = isinstance(v, (list, dict)) and fld is not None
+                if isinstance(v, dict):
+                    sub = prune_deep(v, path)
+                    if sub:
+                        row[k] = sub
+                elif isinstance(v, list):
+                    rows = []
+                    for el in v:
+                        if isinstance(el, dict):
+                            sub = prune_deep(el, path)
+                            if sub:
+                                rows.append(sub)
+                        else:
+                            if path.split(".")[-1] in keep or (
+                                    fld is not None and fld.is_key):
+                                rows.append(el)
+                    if rows:
+                        row[k] = rows
+                else:
+                    if k in keep or (fld is not None and fld.is_key):
+                        row[k] = v
+            return row
+        pruned = []
+        for rec in records:
+            pruned.append(prune_deep(rec))
+        out[cname] = pruned
+    return out
 
 
 def _apply(fr, line, compiled, last, from_start=False, ctx=None):

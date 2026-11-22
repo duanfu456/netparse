@@ -69,7 +69,7 @@ TPL=<SKILL>\templates\huawei-vrp.cmdb
 | 文件 | 覆盖 | 状态 |
 |---|---|---|
 | `huawei-vrp.cmdb` | 华为 VRP 单文件版：接口（92 字段）/静态路由/VPN/BGP/ACL/NQA/设备信息/静态用户/QoS Profile，18 集合 | 318 台真机验证，接口块覆盖率 100% |
-| `huawei/main.cmdb` | 华为模块化版（入口）：9 个功能组文件（device/interfaces/routes/vpn/bgp/acl/nqa/static-user/qos），`from import *` 组合（`.cmdb` 后缀可省略）；与单文件版输出逐字节一致 | 可单独跑某组调试（`parse 02-routes.cmdb <配置>`） |
+| `huawei/main.cmdb` | 华为模块化版（入口）：9 个功能组文件（device/interfaces/routes/vpn/bgp/acl/nqa/static-user/qos），`from import *` 组合（`.cmdb` 后缀可省略）；输出裁剪 `--fields 集合=字段1,字段2`（Key 自动保留）；与单文件版输出逐字节一致 | 可单独跑某组调试（`parse 02-routes.cmdb <配置>`） |
 | `transforms_huawei.py` | 华为 transform 函数：`iface_type`（接口类型派生，21,427 接口实测 100%） | 随模板热改，无需重打包 |
 | `zte-m6000.cmdb` | 中兴 M6000：分区根命令模型 | 64 台验证 |
 

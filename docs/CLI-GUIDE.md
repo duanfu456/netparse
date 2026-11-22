@@ -97,6 +97,19 @@ netparse lint <模板路径> [--json] [--strict]
 | `--json` | JSON 输出问题列表 |
 | `--strict` | 有「警告」也返回非零退出码（默认只有「错误」才非零） |
 
+## 字段白名单（--fields）
+
+输出层裁剪——**解析始终全量**，只裁输出视图（SELECT 列语义）：
+
+    netparse parse huawei.cmdb device.cfg --json --fields "Interfaces=Name,Type,IpAddress;RouteStatics=Prefix,Mask,NextHop"
+
+规则：
+- `集合=字段1,字段2` → 只输出点名集合的点名字段
+- `集合` 单独出现（不带 =）→ 保留该集合全部字段
+- 未列出的集合 → 整个不输出
+- **Key 字段自动保留**（记录身份不能丢，如路由的 Prefix/Mask/NextHop）
+- 未指定 --fields → 全量输出（默认行为不变）
+
 ## 模块化模板
 
 入口模板用 `import` / `from ... import *|集合名` 组合子模板（语法见

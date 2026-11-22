@@ -36,6 +36,28 @@ def _print_lint(issues, as_json):
         print("  [%s] %s: %s" % (lv, coll, msg))
 
 
+def _parse_fields(spec):
+    """解析 --fields 字符串 → run() 的 fields dict 形态。
+
+    例：Interfaces=Name,Type,IpAddress;RouteStatics=Prefix,Mask,NextHop
+    集合名不带 = → None（保留全部字段）
+    """
+    if not spec:
+        return None
+    out = {}
+    for part in spec.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        cname, _, flds = part.partition("=")
+        cname = cname.strip()
+        if flds.strip():
+            out[cname] = {x.strip() for x in flds.split(",") if x.strip()}
+        else:
+            out[cname] = None
+    return out or None
+
+
 def _collect_config_files(config):
     """config 参数展开：文件 → [自身]；文件夹 → 递归全部文件（按路径排序）。"""
     if os.path.isfile(config):
@@ -87,7 +109,8 @@ def main(args):
             try:
                 with open(fp, encoding="utf-8", errors="replace") as f:
                     lines = f.readlines()
-                res = engine.run(colls, lines)
+                res = engine.run(colls, lines,
+                                 fields=_parse_fields(getattr(args, "fields", None)))
                 # 相对路径映射到输出目录（保留子目录结构），扩展名换成 .json
                 out_file = os.path.join(out_dir, os.path.splitext(rel)[0] + ".json")
                 os.makedirs(os.path.dirname(os.path.abspath(out_file)), exist_ok=True)
@@ -110,7 +133,7 @@ def main(args):
     # ── 单文件模式 ──
     with open(args.config, encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
-    res = engine.run(colls, lines)
+    res = engine.run(colls, lines, fields=_parse_fields(getattr(args, "fields", None)))
 
     # 脱敏统计写 stderr：stdout 留给 JSON / 文本输出，不污染
     sys.stderr.write("[mask] L1=%d L2=%d mask=%r heuristic=%s\n"
