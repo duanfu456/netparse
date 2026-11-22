@@ -181,7 +181,16 @@ $EXE parse templates/huawei-vrp.cmdb <配置文件夹> <输出目录>
 按第 4 节工作流：统计形态 → `[value]` 加字段（或 `[rule]` 加规则行）→ lint → 小样验证。
 字段取值正则尽量从真实配置抄，不要自创。
 
-### 5.4 「解析结果不对 / 某字段是空的」
+### 5.5 「给某个字段加派生/换算逻辑（transform）」
+
+1. 确定逻辑归属：只此模板用且 <30 行 → 写进模板 `[python]` 段；多模板共用 → 写进
+   `templates/transforms_*.py`，模板头部 `[python_file]` 引它
+2. 函数签名必须 `def f(value, record=None)`：value 是捕获值（无捕获行时为 None），
+   record 是当前记录 dict；返回 `None` = 字段留空；跨字段派生从 `record.get("字段")` 取
+3. 字段声明加 `func=函数名`
+4. `$EXE lint <模板> --strict` 必须过（func 未定义 / secret+func 都会被拦）
+5. 小样验证：`$EXE parse <模板> <样例> --json`，核对派生值；
+   改的是 `transforms_*.py` 时**不用重打包 exe**（外置热改）
 
 排查顺序：
 1. `lint` 有没有错误/警告
