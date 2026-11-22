@@ -585,3 +585,54 @@ Detect     type(bool) desc(是否在线检测)
 ^static-user\s+${StartIp}\s+${EndIp}\s+gateway\s+${Gateway}\s+interface\s+${Interface}
         (?:\s+vlan\s+${VlanId})?(?:\s+domain-name\s+${DomainName})?(?:\s+(detect)\s*)?$
         -> Detect="true"
+
+
+# ── QoS Profile 全局定义（qos-profile <name> 块）──
+# 现网形态（实测）：
+#   qos-profile <Name>
+#   car cir <Cir> pir <Pir> cbs <Cbs> pbs <Pbs> green pass yellow pass red discard [inbound|outbound]
+#   #
+# 说明：
+#   · qos-profile <Name> 顶格 → 集合 start；car 行缩进 1 → 子集合 QosCarRows indent(1)
+#   · car 行可多行（每行一个方向/一档限速），行尾方向可选 → Direction 可选段
+#   · 同名 profile 的多条 car 行靠 Key(DirIdx) 无法聚合——改用列表逐行保留（顺序即现网顺序）
+QosProfiles type(list) start(^qos-profile\s) end(^#$) end_indent(0) desc(QoS Profile 全局定义)
+[value]
+Name type(str) reg(\S+) option(Key) desc(Profile 名)
+[rule]
+^qos-profile\s+${Name}(?:\s+.*)?\s*$
+
+  QosCarRows type(list) start(^ {1}(?:car|user-queue)\s) indent(1) desc(限速行（逐行保留，不聚合）)
+  [value]
+  Cir        type(int) reg(\d+) desc(CIR kbps；user-queue 行无此字段)
+  Pir        type(int) reg(\d+) desc(PIR kbps)
+  Cbs        type(int) reg(\d+) desc(CBS 字节)
+  Pbs        type(int) reg(\d+) desc(PBS 字节)
+  Green      type(str) reg(\S+) desc(绿色报文动作)
+  Yellow     type(str) reg(\S+) desc(黄色报文动作)
+  Red        type(str) reg(\S+) desc(红色报文动作)
+  Direction  type(str) reg(\S+) desc(方向（可选：inbound/outbound；未写=双向 both）)
+  UqCir      type(int) reg(\d+) desc(user-queue CIR kbps)
+  UqPir      type(int) reg(\d+) desc(user-queue PIR kbps)
+  UqDir      type(str) reg(\S+) desc(user-queue 方向)
+  [rule]
+  # 两种实测形态：完整版（cir pir cbs pbs green yellow red [dir]）与
+  # 精简版（cir cbs green red [dir]，无 pir/pbs/yellow）
+  ^ {1}car\s+cir\s+${Cir}
+        (?:\s+pir\s+${Pir})?
+        (?:\s+cbs\s+${Cbs})?
+        (?:\s+pbs\s+${Pbs})?
+        \s+green\s+${Green}
+        (?:\s+yellow\s+${Yellow})?
+        \s+red\s+${Red}
+        \s+(?P<Direction>inbound|outbound)\s*$
+  ^ {1}car\s+cir\s+${Cir}
+        (?:\s+pir\s+${Pir})?
+        (?:\s+cbs\s+${Cbs})?
+        (?:\s+pbs\s+${Pbs})?
+        \s+green\s+${Green}
+        (?:\s+yellow\s+${Yellow})?
+        \s+red\s+${Red}\s*$
+        -> Direction="both"
+  # user-queue 行（同块内的用户队列限速）
+  ^ {1}user-queue\s+cir\s+${UqCir}\s+pir\s+${UqPir}\s+${UqDir}\s*$
