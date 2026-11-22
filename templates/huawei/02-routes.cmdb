@@ -1,0 +1,49 @@
+# ── 静态路由 ─────────────────────────────────────────
+RouteStatics type(list) start(^ip route-static) desc(静态路由)
+[value]
+Prefix       type(str) reg(\S+) desc(前缀) option(Key)
+Mask         type(str) reg(\S+) desc(掩码) option(Key)
+NextHop      type(str) reg(\d{1,3}(?:\.\d{1,3}){3}) desc(下一跳) option(Key)
+NextHopIface type(str) reg((?!\d{1,3}(?:\.\d{1,3}){3}(?:\s|$))[^\s]+) desc(出接口（含 NULL0 黑洞）)
+Preference   type(int) reg(\d+) desc(优先级)
+Description  type(str) reg(.+) desc(描述)
+VpnInstance  type(str) reg(\S+) desc(所属 VPN 实例) option(Key)
+[rule]
+# ① vpn-instance 变体 · 纯下一跳
+^\s*ip\s+route-static\s+vpn-instance\s+${VpnInstance}\s+${Prefix}\s+${Mask}\s+${NextHop}
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?
+      \s*$
+      -> RouteStatics{VpnInstance,Prefix,Mask,NextHop,Preference,Description}
+# ② vpn-instance 变体 · 出接口（下一跳可选）
+^\s*ip\s+route-static\s+vpn-instance\s+${VpnInstance}\s+${Prefix}\s+${Mask}\s+(?P<NextHopIface>(?!\d{1,3}(?:\.\d{1,3}){3}(?:\s|$))[^\s]+)
+      (?:\s+${NextHop})?
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?
+      \s*$
+      -> RouteStatics{VpnInstance,Prefix,Mask,NextHopIface,NextHop,Preference,Description}
+# ③ plain 变体 · 纯下一跳
+^\s*ip\s+route-static\s+(?!vpn-instance\s)${Prefix}\s+${Mask}\s+${NextHop}
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?
+      \s*$
+      -> RouteStatics{Prefix,Mask,NextHop,Preference,Description}
+# ③b plain 变体 · 黑洞（NULL0 是出接口，非下一跳）
+^\s*ip\s+route-static\s+(?!vpn-instance\s)${Prefix}\s+${Mask}\s+(?P<NextHopIface>NULL0)
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?
+      \s*$
+      -> RouteStatics{Prefix,Mask,NextHopIface,Preference,Description}
+# ③c vpn-instance 变体 · 黑洞
+^\s*ip\s+route-static\s+vpn-instance\s+${VpnInstance}\s+${Prefix}\s+${Mask}\s+(?P<NextHopIface>NULL0)
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?
+      \s*$
+      -> RouteStatics{VpnInstance,Prefix,Mask,NextHopIface,Preference,Description}
+# ④ plain 变体 · 出接口（下一跳可选）
+^\s*ip\s+route-static\s+(?!vpn-instance\s)${Prefix}\s+${Mask}\s+(?P<NextHopIface>(?!\d{1,3}(?:\.\d{1,3}){3}(?:\s|$))[^\s]+)
+      (?:\s+${NextHop})?
+      (?:\s+preference\s+(?P<Preference>\d+))?
+      (?:\s+description\s+(?P<Description>.+))?
+      \s*$
+      -> RouteStatics{Prefix,Mask,NextHopIface,NextHop,Preference,Description}

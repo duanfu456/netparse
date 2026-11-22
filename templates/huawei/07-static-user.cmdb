@@ -1,0 +1,32 @@
+# ── BAS 静态用户（bas-policy 下的 static-user，顶格命令，全局层）──
+# 现网形态（实测）：
+#   static-user <StartIp> <EndIp> gateway <Gw> interface <IfName>[.<SubIf>] vlan <VlanId> domain-name <Domain> detect
+# 说明：
+#   · 该命令顶格（全局），不带缩进 → 不需要 indent() 锚定
+#   · vlan / domain-name / detect 为可选段（(?:...)? 分组覆盖两种实测形态：
+#     带 vlan+domain 的完整版与只到 interface 的精简版）
+StaticUsers type(list) start(^static-user\s) desc(BAS 静态用户)
+[value]
+StartIp    type(str) reg(\d{1,3}(?:\.\d{1,3}){3}) option(Key) desc(起始 IP)
+EndIp      type(str) reg(\d{1,3}(?:\.\d{1,3}){3}) option(Key) desc(结束 IP)
+Gateway    type(str) reg(\d{1,3}(?:\.\d{1,3}){3}) desc(网关)
+Interface  type(str) reg(\S+) desc(接入接口（含子接口）)
+VlanId     type(int) reg(\d+) desc(VLAN)
+DomainName type(str) reg(\S+) desc(认证域)
+Detect     type(bool) desc(是否在线检测)
+[rule]
+^static-user\s+${StartIp}\s+${EndIp}\s+gateway\s+${Gateway}\s+interface\s+${Interface}
+        (?:\s+vlan\s+${VlanId})?(?:\s+domain-name\s+${DomainName})?(?:\s+(detect)\s*)?$
+        -> Detect="true"
+
+
+# ── QoS Profile 全局定义（qos-profile <name> 块）──
+# 现网形态（实测）：
+#   qos-profile <Name>
+#   car cir <Cir> pir <Pir> cbs <Cbs> pbs <Pbs> green pass yellow pass red discard [inbound|outbound]
+#   #
+# 说明：
+#   · qos-profile <Name> 顶格 → 集合 start；car 行缩进 1 → 子集合 In/Out
+#   · car 行可多行（每行一个方向/一档限速），行尾方向可选
+#   · 行尾不写方向 = inbound/outbound 用同一套限速参数（Direction="both"，用户确认语义）
+#   · 行按方向分流：无方向 = in/out 同参（Out 由 transform 从 In 复制）；

@@ -240,20 +240,33 @@ def is_coll_decl(toks):
     return toks[1].startswith("type(")
 
 
-def parse_template(path):
-    colls = []
-    stack = []        # (indent, Coll)
-    cur = None        # 当前集合
-    mode = None       # None | value | rule | python
-    base_indent = None
-    pending = None    # 待落盘的规则（可能多行）
-    field_stack = []  # (indent, Field)
-    section_coll = None
-    # ── transform 段收集 ──
-    py_file_lines = []   # [python_file] 段的路径行（声明顺序）
-    py_blocks = []       # [python] 段代码块（物理顺序，处理时统一按出现顺序执行）
-    cur_py = None        # 当前 python 段的行缓冲
+def _parse_template_file(path, colls, py_file_lines, py_blocks,
+                         seen_paths, imported_names, importing_from=None):
+    """解析单个模板文件（include/import 的递归工作体）。
+
+    colls/py_file_lines/py_blocks 是【主模板累计容器】：本文件的产物追加进去。
+    seen_paths：已处理绝对路径集合（循环引用检测）。
+    imported_names：已注册的顶层集合名 → 来源文件（同名冲突检测）。
+    importing_from：非 None 时为集合名集合（from ... import A, B 语法），
+        只保留点名顶层集合（子集合随父）。
+    返回：实际并入的顶层集合名列表。
+    """
     tpath = os.path.abspath(path)
+    if tpath in seen_paths:
+        raise TemplateFileError(
+            "%s: 循环 include/import 检测到（已在解析链中）" % path)
+    seen_paths.add(tpath)
+
+    colls_before = len(colls)
+    stack = []
+    cur = None
+    mode = None
+    base_indent = None
+    pending = None
+    field_stack = []
+    section_coll = None
+    cur_py = None
+    top_colls = []   # 本文件声明的顶层集合（判断 from 选择名单用）
 
     def new_collection(toks, indent):
         nonlocal stack, cur
@@ -265,6 +278,8 @@ def parse_template(path):
         colls.append(coll)
         if parent:
             parent.children.append(coll)
+        else:
+            top_colls.append(coll)
         stack.append((indent, coll))
         cur = coll
         return coll
@@ -286,11 +301,6 @@ def parse_template(path):
         st = s.strip()
         if not st:
             flush_pending()
-            # 空行只结束「当前规则的多行续写」，不结束段落。
-            # ⚠️ 不能无条件把 mode 设回 None：[rule] 段里用空行分组（可读性需要）
-            # 会让后续 `^ {1}xxx` 规则走进「段外」分支被当成集合声明吞掉。
-            # 而 [value] 段后的空行必须回到「段外」，否则下一条
-            # `Interfaces type(list) ...` 会被当成字段声明 —— 所以按上一段类型区分。
             if mode not in ("rule", "python", "python_file"):
                 mode = None
                 field_stack = []
@@ -299,10 +309,38 @@ def parse_template(path):
         if st.startswith("#"):
             continue
         low = st.lower()
+
+        # ── include / from-import（仅段外有效）──
+        if mode is None:
+            m_imp = re.match(r"^import\s+(.+)$", st)
+            m_from = re.match(r"^from\s+(\S+)\s+import\s+(.+)$", st)
+            if m_from:
+                rel, names_s = m_from.group(1), m_from.group(2)
+                sub = os.path.normpath(
+                    os.path.join(os.path.dirname(tpath), rel))
+                if not os.path.isfile(sub):
+                    raise TemplateFileError(
+                        "%s: import 的模板不存在: %s" % (path, sub))
+                names = [x.strip() for x in names_s.split(",") if x.strip()]
+                sel = None if "*" in names else set(names)
+                _parse_template_file(sub, colls, py_file_lines, py_blocks,
+                                     seen_paths, imported_names,
+                                     importing_from=sel)
+                continue
+            if m_imp:
+                rel = m_imp.group(1).strip()
+                sub = os.path.normpath(
+                    os.path.join(os.path.dirname(tpath), rel))
+                if not os.path.isfile(sub):
+                    raise TemplateFileError(
+                        "%s: import 的模板不存在: %s" % (path, sub))
+                _parse_template_file(sub, colls, py_file_lines, py_blocks,
+                                     seen_paths, imported_names, None)
+                continue
+
         if low in ("[value]", "[vlaue]", "[rule]", "[python]", "[python_file]"):
             flush_pending()
             if low == "[python]":
-                # 开新 python 块（前一缓冲收尾）
                 if cur_py:
                     py_blocks.append("\n".join(cur_py))
                 cur_py = []
@@ -314,7 +352,6 @@ def parse_template(path):
                 cur_py = None
                 mode = "python_file"
                 continue
-            # 收尾悬挂的 python 块
             if cur_py:
                 py_blocks.append("\n".join(cur_py))
                 cur_py = None
@@ -324,24 +361,20 @@ def parse_template(path):
             field_stack = []
             continue
         if st.startswith("["):
-            # 未知段头：显式报错（此前是静默 continue，会吞掉用户拼错的段头）
             if mode == "python":
                 if cur_py is None:
                     cur_py = []
-                cur_py.append(s)      # python 段内的 [ 开头行按代码收（列表下标等）
+                cur_py.append(s)
                 continue
             raise ValueError(
                 "%s: 未知的段头 %r（支持 [value] / [rule] / [python] / [python_file]）"
                 % (path, st))
         if mode == "python":
-            # 集合声明行（顶格 名字 type(...)）结束 python 段 —— 与 [value] 段
-            # "空行回段外"的直觉一致：新集合声明意味着 python 段结束。
             if re.match(r"^[A-Z]\w*\s+type\(", s):
                 if cur_py:
                     py_blocks.append("\n".join(cur_py))
                 cur_py = None
                 mode = None
-                # 落到下方段外分支正常处理集合声明
             else:
                 if cur_py is None:
                     cur_py = []
@@ -349,7 +382,7 @@ def parse_template(path):
                 continue
         if mode == "python_file":
             if re.match(r"^[A-Z]\w*\s+type\(", s):
-                mode = None      # 集合声明行结束 python_file 段，落到段外分支
+                mode = None
             else:
                 py_file_lines.append(s)
                 continue
@@ -357,12 +390,10 @@ def parse_template(path):
         indent = len(s) - len(s.lstrip())
         toks = split_tokens(st)
 
-        # 段外 → 集合声明
         if mode is None:
             new_collection(toks, indent)
             continue
 
-        # [value] 段 → 字段声明（缩进 = 嵌套）
         if mode == "value":
             if section_coll is None:
                 continue
@@ -379,19 +410,9 @@ def parse_template(path):
             field_stack.append((indent, f))
             continue
 
-        # [rule] 段 → 子集合声明 / 规则 / 规则续行
         if is_coll_decl(toks):
             flush_pending()
             coll = new_collection(toks, indent)
-            # ⚠️ 这里**不能**把 mode 设回 None。
-            # mode=None 的语义是「段外，只接受集合声明」，一旦设回 None，
-            # 子集合之后紧跟的父集合规则（例如 Interfaces 里先声明 IpAddress
-            # 子集合、再写 `^ {1}mtu ...` 规则）就会被当成集合声明吞掉。
-            # 子集合自己必然带 [value]/[rule] 段，那些段会把 section_coll 切过去，
-            # 所以保持 mode="rule" 是安全的。
-            #
-            # section_coll 跟着切到子集合：子集合若没有显式 [rule] 段
-            # （如 BgpPeers 只在声明行写了 indent），后续规则应归到子集合。
             section_coll = coll
             base_indent = None
             field_stack = []
@@ -405,16 +426,80 @@ def parse_template(path):
         pending = st
 
     flush_pending()
+    if cur_py:
+        py_blocks.append("\n".join(cur_py))
 
     for c in colls:
         c.key_fields = [f.path for f in c.all_fields.values()
                         if f.is_key and f.parent is None]
 
+    # ── from 选择：只保留点名顶层集合（子集合随父），其余移除 ──
+    merged_names = []
+    if importing_from is not None:
+        wanted = set(importing_from)
+        keep = set()
+        for tc in top_colls:
+            if tc.name in wanted:
+                keep.add(tc.name)
+                # 子树全部保留
+                todo = [tc]
+                while todo:
+                    cur_c = todo.pop()
+                    for ch in cur_c.children:
+                        keep.add(ch.name)
+                        todo.append(ch)
+        missing = wanted - {tc.name for tc in top_colls}
+        if missing:
+            raise TemplateFileError(
+                "%s: import 的集合不存在: %s（可导入: %s）"
+                % (path, "、".join(sorted(missing)),
+                   "、".join(tc.name for tc in top_colls) or "（无）"))
+        kept = []
+        for c in colls[colls_before:]:
+            if c.parent is None or c.name in keep or (
+                    c.parent is not None and c.parent.name in keep):
+                kept.append(c)
+        # 按父链精确过滤：只留 wanted 集合与其全部后代
+        keep_exact = set()
+        todo = []
+        for c in colls[colls_before:]:
+            if c.parent is None and c.name in wanted:
+                keep_exact.add(c.name)
+                todo.append(c)
+        while todo:
+            cur_c = todo.pop()
+            for ch in cur_c.children:
+                keep_exact.add(ch.name)
+                todo.append(ch)
+        kept = [c for c in colls[colls_before:] if c.name in keep_exact]
+        colls[:] = colls[:colls_before] + kept
+        merged_names = [tc.name for tc in top_colls if tc.name in keep_exact]
+    else:
+        merged_names = [tc.name for tc in top_colls]
+
+    # ── 同名冲突检测（跨文件顶层集合）──
+    for nm in merged_names:
+        if nm in imported_names and imported_names[nm] != tpath:
+            raise TemplateFileError(
+                "集合 %s 重名：%s 与 %s 都定义了它（同一解析对象禁止两份定义）"
+                % (nm, imported_names[nm], tpath))
+        imported_names[nm] = tpath
+    return merged_names
+
+
+def parse_template(path):
+    colls = []
+    py_file_lines = []   # [python_file] 段的路径行（声明顺序）
+    py_blocks = []       # [python] 段代码块（物理顺序，处理时统一按出现顺序执行）
+    seen_paths = set()
+    imported_names = {}
+    _parse_template_file(path, colls, py_file_lines, py_blocks,
+                         seen_paths, imported_names, None)
+    tpath = os.path.abspath(path)
+
     # ── transform：加载 [python_file] + 执行 [python] ──
     registry = {}
     load_warnings = []
-    if cur_py:
-        py_blocks.append("\n".join(cur_py))
     tpl_dir = os.path.dirname(tpath)
     added_syspath = []
     try:

@@ -1,0 +1,15 @@
+# ── 设备级（无 start = 栈底常驻，始终生效）───────────────
+[python_file]
+transforms_huawei.py
+
+Device type(list) desc(设备)
+[value]
+SysName   type(str) reg(\S+) desc(系统名) option(Key)
+Version   type(str) reg(\S+) desc(版本)
+RouterId  type(str) reg(\S+) desc(Router ID)
+Platform  type(str) reg(\S+) desc(设备型号)
+[rule]
+^!Software\s+Version\s+${Version}\s*$
+^sysname\s+${SysName}\s*$
+^router id\s+${RouterId}\s*$
+^[Ss]ysname\s+${SysName}\s*$

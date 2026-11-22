@@ -1,0 +1,52 @@
+# ── VPN 实例 ─────────────────────────────────────────
+# 真实结构（注意 ipv4-family / ipv6-family 是**真实子层**，
+# RD 与 vpn-target 都挂在族底下，不是挂在实例本级）：
+#
+#     ip vpn-instance ZiJian-VPN-ZhuanXian-XinAn
+#      ipv4-family
+#       route-distinguisher 64650:100000008
+#       vpn-target 64650:100000008 export-extcommunity
+#      ipv6-family
+#       route-distinguisher 64650:100000008
+#       vpn-target 64650:100000008 export-extcommunity
+#
+# 旧模板把 vpn-target 平铺在实例上，导致 v4/v6 的 target 混成一堆分不出族。
+VpnInstances type(list) start(^ip vpn-instance) end(^#$) end_indent(0) desc(VPN实例)
+[value]
+Name               type(str) reg(\S+) desc(名称) option(Key)
+Description        type(str) reg(.+) desc(描述)
+[rule]
+^ip vpn-instance\s+${Name}\s*$
+^ {1}description\s+${Description}\s*$
+
+  # ── 地址族（子层）──────────────────────────────────
+  # 现网实测：`ipv4-family` 280 次、`ipv6-family` 20 次，**都在缩进 1**，
+  # 且两者下面的 RD / vpn-target 都是缩进 2 —— 光看缩进和规则前缀
+  # 区分不了族。旧写法把两条 `^ {2}route-distinguisher` 都写在
+  # VpnInstances 本层，结果 20 个 ipv6-family 的配置全被写进 Ipv4Family。
+  #
+  # 改成两个独立子集合，靠 start 锚定族首行、靠栈的先后顺序天然分离：
+  # 进入 ipv6-family 后，栈顶就是 VpnIpv6Family，{2} 规则只会在它里面匹配。
+  VpnIpv4Family type(dict) start(^ {1}ipv4-family\s*$) indent(2) desc(IPv4 地址族)
+  [value]
+  RouteDistinguisher type(str) reg(\S+) desc(RD)
+  ApplyLabel         type(str) reg(\S+) desc(标签模式)
+  VpnTargets         type(list) desc(VPN 目标)
+    Rd        type(str) reg(\S+) desc(RD)
+    Direction type(str) reg(\S+) desc(方向)
+  [rule]
+  ^ {2}route-distinguisher\s+${RouteDistinguisher}\s*$
+  ^ {2}apply-label\s+${ApplyLabel}\s*$
+  ^ {2}vpn-target\s+${VpnTargets.Rd}\s+${VpnTargets.Direction}\s*$
+
+  VpnIpv6Family type(dict) start(^ {1}ipv6-family\s*$) indent(2) desc(IPv6 地址族)
+  [value]
+  RouteDistinguisher type(str) reg(\S+) desc(RD)
+  ApplyLabel         type(str) reg(\S+) desc(标签模式)
+  VpnTargets         type(list) desc(VPN 目标)
+    Rd        type(str) reg(\S+) desc(RD)
+    Direction type(str) reg(\S+) desc(方向)
+  [rule]
+  ^ {2}route-distinguisher\s+${RouteDistinguisher}\s*$
+  ^ {2}apply-label\s+${ApplyLabel}\s*$
+  ^ {2}vpn-target\s+${VpnTargets.Rd}\s+${VpnTargets.Direction}\s*$

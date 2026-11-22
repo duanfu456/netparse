@@ -1,0 +1,37 @@
+# ── ACL ──────────────────────────────────────────────
+# 现网口径（10 台）：ACL rule 7,755 行 / 103 种形态。
+# 旧模板穷举 permit/deny × source/destination 只覆盖 18.3%；
+# 下面这条可选组规则覆盖 100%。
+# 注意 Sequence 不设 option(Required)：拿不到序号宁可少字段，也别丢整条规则。
+Acls type(list) start(^acl number) end(^#$) end_indent(0) desc(ACL)
+[value]
+Number      type(int) reg(\d+) desc(ACL 号) option(Key)
+Name        type(str) reg(\S+) desc(ACL 名)
+Description type(str) reg(.+) desc(描述)
+[rule]
+^acl number\s+${Number}(?:\s+name\s+${Name})?\s*$
+^ {1}description\s+${Description}\s*$
+
+  # ── ACL 规则（子层）────────────────────────────────
+  # ⚠️ 可选组的顺序决定成败：`${Protocol}` 用的是宽字符类，如果排在
+  #    `source` / `destination` 前面，会把关键字当协议名吃掉
+  #    （`rule 5 permit source 1.1.1.1 0` → Protocol="source"，Source 全丢）。
+  #    所以这里用**负向断言**把关键字排除在协议位之外。
+  AclRules type(list) start(^ {1}rule\s) indent(1) desc(ACL规则)
+  [value]
+  Sequence        type(int)  reg(\d+) desc(序号) option(Key)
+  Action          type(str)  reg(permit|deny) desc(动作)
+  Protocol        type(str)  reg([a-z][a-z0-9-]*) desc(协议)
+  VpnInstance     type(str)  reg(\S+) desc(匹配 VPN 实例)
+  Source          type(str)  reg(\S+) desc(源地址)
+  SourceMask      type(str)  reg(\S+) desc(源掩码)
+  UserGroup       type(str)  reg(\S+) desc(源用户组)
+  SourcePort      type(str)  reg(.+) desc(源端口)
+  Destination     type(str)  reg(\S+) desc(目的地址)
+  DestinationMask type(str)  reg(\S+) desc(目的掩码)
+  DestPort        type(str)  reg(.+) desc(目的端口)
+  TimeRange       type(str)  reg(\S+) desc(时间段)
+  [rule]
+  ^ {1}rule\s+${Sequence}\s+${Action}(?:\s+(?!source\b|destination\b|source-port\b|destination-port\b|vpn-instance\b|time-range\b|counting\b|fragment\b)${Protocol})?(?:\s+vpn-instance\s+${VpnInstance})?(?:\s+source\s+(?:user-group\s+${UserGroup}|${Source}(?:\s+${SourceMask})?))?(?:\s+source-port\s+(?:eq|range)\s+${SourcePort})?(?:\s+destination\s+(?:ip-address\s+)?${Destination}(?:\s+${DestinationMask})?)?(?:\s+destination-port\s+(?:eq|range)\s+${DestPort})?(?:\s+time-range\s+${TimeRange})?\s*$
+        -> AclRules{Sequence,Action,Protocol,VpnInstance,UserGroup,Source,SourceMask,SourcePort,Destination,DestinationMask,DestPort,TimeRange}
+  ^ {1}rule\s+${Sequence}\s*$    -> AclRules{Sequence}

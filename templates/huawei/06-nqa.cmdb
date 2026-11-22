@@ -1,0 +1,40 @@
+# ── NQA ──────────────────────────────────────────────
+# 现网两种块首：`nqa test-instance <name> <id>`（1234 次）
+#               `nqa twamp-light`（20 次）
+# 旧模板把 name 丢了（填充率 0%），这里按真实形态拆。
+Nqas type(list) start(^nqa\s) end(^#$) end_indent(0) desc(NQA)
+[value]
+Name        type(str) reg(\S+) desc(名称) option(Key)
+InstanceId  type(str) reg(\S+) desc(实例 ID)
+Type        type(str) reg(\S+) desc(类型)
+TestType    type(str) reg(\S+) desc(测试类型)
+Destination type(str) reg(\S+) desc(目的地址)
+ProbeCount  type(int) reg(\d+) desc(探测次数)
+DataSize    type(int) reg(\d+) desc(报文大小)
+VpnInstance type(str) reg(\S+) desc(所属 VPN 实例)
+[rule]
+^nqa\s+test-instance\s+${Name}\s+${InstanceId}\s*$
+^nqa\s+${Type}(?:\s+(?P<Name>\S+))?\s*$
+^ {1}test-type\s+${TestType}\s*$
+^ {1}destination-address\s+(?:ipv4\s+|ipv6\s+)?${Destination}\s*$
+^ {1}probe-count\s+${ProbeCount}\s*$
+^ {1}datasize\s+${DataSize}\s*$
+^ {1}vpn-instance\s+${VpnInstance}\s*$
+
+  # ── NQA 会话（子层）──────────────────────────────
+  # 真实缩进是 2（`nqa twamp-light` → ` responder` → `  test-session`），
+  # 不是 1。这里不写 indent()：会话行全库只有一种形态，
+  # 用 start/end 的隐式出栈就够，写 indent 反而容易绑死厂商缩进。
+  NqaSessions type(list) start(^\s*test-session\s) desc(NQA会话)
+  [value]
+  SessionId          type(int) reg(\d+) desc(会话号) option(Key)
+  LocalIp            type(str) reg(\S+) desc(本地 IP)
+  RemoteIp           type(str) reg(\S+) desc(远端 IP)
+  LocalPort          type(int) reg(\d+) desc(本地端口)
+  RemotePort         type(int) reg(\d+) desc(远端端口)
+  LinkBundleInterface type(str) reg(\S+) desc(绑定接口)
+  [rule]
+  ^\s*test-session\s+${SessionId}\s+local-ip\s+${LocalIp}\s+remote-ip\s+${RemoteIp}
+        \s+local-port\s+${LocalPort}\s+remote-port\s+${RemotePort}
+        \s+link-bundle-interface\s+${LinkBundleInterface}\s*$
+        -> NqaSessions{SessionId,LocalIp,RemoteIp,LocalPort,RemotePort,LinkBundleInterface}
