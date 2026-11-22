@@ -602,21 +602,21 @@ QosProfiles type(list) start(^qos-profile\s) end(^#$) end_indent(0) desc(QoS Pro
 [value]
 Name type(str) reg(\S+) option(Key) desc(Profile 名)
 In  type(dict) desc(入方向限速；行尾无方向的 car 行 = in/out 同参，In/Out 各写一份)
-  Cir    type(int) reg(\d+) desc(CIR kbps)
-  Pir    type(int) reg(\d+) desc(PIR kbps)
-  Cbs    type(int) reg(\d+) desc(CBS 字节)
-  Pbs    type(int) reg(\d+) desc(PBS 字节)
+  Cir    type(int) reg(\d+) func=kbps_to_m desc(CIR，单位 M)
+  Pir    type(int) reg(\d+) func=kbps_to_m desc(PIR，单位 M)
+  Cbs    type(int) reg(\d+) func=bytes_to_mb desc(CBS，单位 MB)
+  Pbs    type(int) reg(\d+) func=bytes_to_mb desc(PBS，单位 MB)
   Green  type(str) reg(\S+) desc(绿色动作)
   Yellow type(str) reg(\S+) desc(黄色动作)
   Red    type(str) reg(\S+) desc(红色动作)
   UqCir  type(int) reg(\d+) desc(user-queue CIR)
-  UqPir  type(int) reg(\d+) desc(user-queue PIR)
+  UqPir  type(int) reg(\d+) func=kbps_to_m desc(user-queue PIR，单位 M)
   UqDir  type(str) reg(\S+) desc(user-queue 方向)
 Out type(dict) desc(出方向限速；无方向行 = 从 In 复制（out_* transform）)
-  Cir    type(int) func=out_cir desc(CIR kbps)
-  Pir    type(int) func=out_pir desc(PIR kbps)
-  Cbs    type(int) func=out_cbs desc(CBS 字节)
-  Pbs    type(int) func=out_pbs desc(PBS 字节)
+  Cir    type(int) func=out_cir_m desc(CIR，单位 M)
+  Pir    type(int) func=out_pir_m desc(PIR，单位 M)
+  Cbs    type(int) func=out_cbs_mb desc(CBS，单位 MB)
+  Pbs    type(int) func=out_pbs_mb desc(PBS，单位 MB)
   Green  type(str) func=out_green desc(绿色动作)
   Yellow type(str) func=out_yellow desc(黄色动作)
   Red    type(str) func=out_red desc(红色动作)
@@ -652,43 +652,3 @@ Out type(dict) desc(出方向限速；无方向行 = 从 In 复制（out_* trans
 # user-queue 行（块内与 car 并列，收进 In 视图的 Uq 字段）
 ^ {1}user-queue\s+cir\s+${In.UqCir}\s+pir\s+${In.UqPir}\s+${In.UqDir}\s*$
       -> In{UqCir,UqPir,UqDir}
-[value]
-Name type(str) reg(\S+) option(Key) desc(Profile 名)
-In  type(dict) func=in_view desc(入方向限速（含无方向行的双向参数）)
-Out type(dict) func=out_view desc(出方向限速（无方向行同 In；outbound 行专用值）)
-[rule]
-^qos-profile\s+${Name}(?:\s+.*)?\s*$
-
-  QosCarRows type(list) start(^ {1}(?:car|user-queue)\s) indent(1) desc(限速行（逐行保留，不聚合））
-  [value]
-  Cir        type(int) reg(\d+) desc(CIR kbps；user-queue 行无此字段)
-  Pir        type(int) reg(\d+) desc(PIR kbps)
-  Cbs        type(int) reg(\d+) desc(CBS 字节)
-  Pbs        type(int) reg(\d+) desc(PBS 字节)
-  Green      type(str) reg(\S+) desc(绿色报文动作)
-  Yellow     type(str) reg(\S+) desc(黄色报文动作)
-  Red        type(str) reg(\S+) desc(红色报文动作)
-  Direction  type(str) reg(\S+) desc(方向；不写 = inbound/outbound 同一配置（both）)
-  UqCir      type(int) reg(\d+) desc(user-queue CIR kbps)
-  UqPir      type(int) reg(\d+) desc(user-queue PIR kbps)
-  UqDir      type(str) reg(\S+) desc(user-queue 方向)
-  [rule]
-  # 两种 car 形态（完整/精简）+ 行尾方向可选；方向命名组收 Direction
-  ^ {1}car\s+cir\s+${Cir}
-        (?:\s+pir\s+${Pir})?
-        (?:\s+cbs\s+${Cbs})?
-        (?:\s+pbs\s+${Pbs})?
-        \s+green\s+${Green}
-        (?:\s+yellow\s+${Yellow})?
-        \s+red\s+${Red}
-        \s+(?P<Direction>inbound|outbound)\s*$
-  ^ {1}car\s+cir\s+${Cir}
-        (?:\s+pir\s+${Pir})?
-        (?:\s+cbs\s+${Cbs})?
-        (?:\s+pbs\s+${Pbs})?
-        \s+green\s+${Green}
-        (?:\s+yellow\s+${Yellow})?
-        \s+red\s+${Red}\s*$
-        -> Direction="both"
-  # user-queue 行
-  ^ {1}user-queue\s+cir\s+${UqCir}\s+pir\s+${UqPir}\s+${UqDir}\s*$

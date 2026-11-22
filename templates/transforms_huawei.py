@@ -65,3 +65,38 @@ def out_view(value, record=None):
     """Out 视图：优先 outbound 行；无则用无方向（both）行。"""
     rows = (record or {}).get("QosCarRows")
     return _pick_view(rows, "outbound", record)
+
+
+# ── 限速单位换算（QosProfiles：kbps → M；bytes → MB，十进制口径）──
+
+def kbps_to_m(value, record=None):
+    """kbps → Mbps。value 捕获值为 str/int；None 时返回 None。"""
+    if value is None or value == "":
+        return None
+    return round(int(value) / 1000, 3)
+
+
+def bytes_to_mb(value, record=None):
+    """bytes → MB（十进制，÷1000000）。"""
+    if value is None or value == "":
+        return None
+    return round(int(value) / 1000000, 3)
+
+
+def out_cir_m(value, record=None):
+    """Out.Cir：outbound 行捕获值直接换算；无方向行已由 ; 双 target 写入 In 同参，
+    Out 由另一段 target 写入本字段？——注意 Out.Cir 的捕获组名是 Out.Cir，
+    换算同 kbps_to_m。"""
+    return kbps_to_m(value, record)
+
+
+def out_pir_m(value, record=None):
+    return kbps_to_m(value, record)
+
+
+def out_cbs_mb(value, record=None):
+    return bytes_to_mb(value, record)
+
+
+def out_pbs_mb(value, record=None):
+    return bytes_to_mb(value, record)
