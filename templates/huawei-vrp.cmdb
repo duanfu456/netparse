@@ -261,7 +261,6 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
   ^ {1}ip address\s+${Address}\s+${Mask}(?:\s+${AddressType})?\s*$   -> Family="ipv4"
   ^ {1}ipv6 address\s+${Address}/${Mask}\s*$                              -> Family="ipv6"
   ^ {1}ipv6 address\s+auto\s+${Mode}\s*$                                  -> Address="auto",Family="ipv6"
-  ^ {1}ip relay address\s+${Address}\s*$                                  -> Family="ipv4",Mask=""
 
   # ── BAS 接入视图正文（缩进 2）──────────────────────
   # 缩进 2 是 bas 子视图内部，必须与接口本级的同名命令分开建模。
