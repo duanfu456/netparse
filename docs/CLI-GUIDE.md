@@ -97,6 +97,16 @@ netparse lint <模板路径> [--json] [--strict]
 | `--json` | JSON 输出问题列表 |
 | `--strict` | 有「警告」也返回非零退出码（默认只有「错误」才非零） |
 
+## 模块化模板
+
+入口模板用 `import` / `from ... import *|集合名` 组合子模板（语法见
+TEMPLATE-GUIDE 场景 18）。CLI 用法不变——入口传 main 或任一子模板均可：
+
+    netparse parse templates/huawei/main.cmdb device.cfg --json
+    netparse parse templates/huawei/02-routes.cmdb device.cfg  # 单组调试
+
+引用路径相对**当前被解析文件**（模板文件夹整体拷贝引用不失效）。
+
 检查内容（节选）：`func=` 引用不存在的 transform 函数、`secret` 字段禁止 `func=`、字段引用了未声明的名字、集合/字段重名、`option(Key)` 缺失提示等。**编辑模板后必跑**；lint 不过的模板不要落库。
 
 退出码：0 = 通过；1 = 有错误；`--strict` 时有警告也返回 1。

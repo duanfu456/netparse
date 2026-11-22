@@ -1218,3 +1218,43 @@ Out type(dict) desc(出方向限速)
 
 **实战**（`templates/huawei-vrp.cmdb` QosProfiles）：无方向 / inbound /
 outbound / 混合 / user-queue 五种形态全量验证通过。
+
+
+### 场景 18 · 模板模块化（import / from）
+
+模板大了以后按功能组拆分，main.cmdb 做入口组合。
+
+**语法**（仅段外，文件顶部）：
+
+```text
+import interfaces.cmdb                    ← 整组引入
+from qos.cmdb import *                    ← 全组（通配）
+from routes.cmdb import RouteStatics      ← 选择导入（子集合随父，不能单拆子集合）
+```
+
+**目录形态**：
+
+```text
+templates/huawei/
+├─ main.cmdb            ← 入口：from 各组 import *
+├─ 00-device.cmdb       Device + [python_file] transforms_huawei.py
+├─ 01-interfaces.cmdb   Interfaces（92 字段全家桶）
+├─ 02-routes.cmdb / 03-vpn.cmdb / 04-bgp.cmdb / 05-acl.cmdb
+├─ 06-nqa.cmdb / 07-static-user.cmdb / 08-qos.cmdb
+└─ transforms_huawei.py ← 随组走（相对本文件解析）
+```
+
+**三条硬规则**：
+
+1. 路径相对**当前被解析文件**（与 `[python_file]` 同规则）——模板文件夹
+   整体拷贝/移动，内部引用永不失效；入口传谁就跑谁（main 或单个组均可独立调试）
+2. **跨文件顶层集合同名 = 错误**（集合是数据通道，覆盖即丢数据——与
+   transform 不同，后者按 import 顺序后加载覆盖，lint 有提示）
+3. 子集合不能脱离父集合单独 import（数据挂载点在父记录里）
+
+**合并语义**：main 不写任何"合并代码"——引擎解析 main 时递归解析各组，
+顶层集合追加进同一条流水线；运行期与单文件完全一致（import 只决定组在不在，
+规则决定数据是什么，两者正交）。
+
+**实战验证**：`templates/huawei/main.cmdb`（9 组）与单文件 `huawei-vrp.cmdb`
+对同一配置的输出**逐字节一致**。
