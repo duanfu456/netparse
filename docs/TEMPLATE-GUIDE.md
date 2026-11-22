@@ -1176,3 +1176,45 @@ Type 字段 0% → **100%**——链路聚合 16,884 / 以太光口 4,306 / 虚�
 
 **路径说明**：`python_file` 相对**模板文件自身**解析——模板放任意目录都行
 （引擎对模板路径零限制），配套 `.py` 跟着模板走即可，整个单元自包含分发。
+
+
+### 场景 17 · 多 target：一条规则写多个目标（`;` 分隔）
+
+**语法**：`->` 后的 target 用 `;` 分隔多段，每段独立执行完整 target 语义（members / assigns 均可）：
+
+```text
+QosProfiles type(list) start(^qos-profile\s) end(^#$) end_indent(0)
+[value]
+Name type(str) reg(\S+) option(Key)
+In  type(dict) desc(入方向限速)
+Out type(dict) desc(出方向限速)
+[rule]
+^qos-profile\s+${Name}(?:\s+.*)?\s*$
+
+# 无方向 car 行：';' 双 target → In 与 Out 各写一份（双向同参）
+^ {1}car\s+cir\s+${In.Cir} ... \s+red\s+${In.Red}(?!\s+(?:inbound|outbound))\s*$
+      -> In{Cir,Pir,Cbs,Pbs,Green,Yellow,Red};Out{Cir,Pir,Cbs,Pbs,Green,Yellow,Red}
+# inbound 行：只写 In
+^ {1}car\s+cir\s+${In.Cir} ... discard inbound$
+      -> In{Cir,Pir,...}
+# outbound 行：只写 Out
+^ {1}car\s+cir\s+${Out.Cir} ... discard outbound$
+      -> Out{Cir,Pir,...}
+```
+
+输出形态：`{ "Name": "wlan-2m", "In": {...}, "Out": {...} }`。
+
+**要点**：
+
+1. **分隔符只能是 `;`**——逗号已被 members/assigns 内部占用；空格在 assigns 里
+   无定义且会让旧写法静默变义
+2. **dict 字段的子字段要先声明**（`In` 下缩进写 `Cir type(int) reg(...)`），
+   否则 `${In.Cir}` 引用会 lint 报错"未声明"
+3. **target 成员名用短名**（`In{Cir}` 而非 `In{In.Cir}`）——引擎按 `base + '.' + 成员名`
+   回查捕获组（`In.Cir`），输出键名干净
+4. **无方向规则尾部要负向断言** `(?!\s+(?:inbound|outbound))`——否则带方向的行
+   会被无方向规则先命中（可选段吃掉方向词），触发双写误判
+5. 字典键名不带集合前缀：`-> In{Cir}` 输出 `{"In": {"Cir": ...}}`
+
+**实战**（`templates/huawei-vrp.cmdb` QosProfiles）：无方向 / inbound /
+outbound / 混合 / user-queue 五种形态全量验证通过。

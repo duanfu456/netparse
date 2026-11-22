@@ -7,7 +7,9 @@
 
 | 版本 | 变更 |
 |---|---|
-| v6（2026-11-22） | **分发形态完成**：PyInstaller 单文件 exe（`dist/netparse.exe` ~7MB，UTF-8 强制输出，Windows 无 Python 直接跑）；`skills/netparse/` 自包含 AI skill 分发包（exe + 模板 + 速查文档 + SKILL.md，拷进 AI 工具 skills 目录即用）；CLI parse 支持配置文件夹批量（每文件一个 JSON）；indent / end_indent 深度文档化（写入 CHEATSHEET 铁律与 SKILL） |
+| v6（2026-11-22） | **分发形态完成**：PyInstaller 单文件 exe（`dist/netparse.exe` ~7MB，UTF-8 强制输出，Windows 无 Python 直接跑）；`skills/netparse/` 自包含 AI skill 分发包（exe + 模板 + 速查文档 + SKILL.md，拷进 AI 工具 skills 目录即用）；CLI parse 支持配置文件夹批量（每文件一个 JSON）；indent / end_indent 深度文档化（写入 CHEATSHEET 铁律与 SKILL）；
+  引擎新增 **`;` 多 target**（`-> In{...};Out{...}` 一条规则写多个目标，三消费点全支持）；
+  模板新增 StaticUsers（static-user 静态用户）与 QosProfiles（qos-profile 块，In/Out 视图） |
 | v5（2026-11-21） | **transform 机制落地**：字段级 `func=` + `[python]`/`[python_file]` 双段（相对模板路径，自包含分发）；签名 `def f(value, record=None)`；双执行路径（捕获值 / commit 派生补算）；lint 五条新检查；华为模板接入 `iface_type`——接口类型 0% → **100%**（21,427 接口）。另：编辑器（高亮/补全/折叠/试运行/保存守门）、CLI 尾部放宽自动补齐。详见 `TEMPLATE-GUIDE.md` 场景 16 与 `.devforge/spec/changes/transform-func/design.md` |
 | v4（2026-11-20） | 按纯缩进模型重写华为模板（接口块内覆盖率 30.8% → **100%**）；引擎新增 `indent(n)` / `end_indent(n)`（均 opt-in）；修 6 个 bug（5 引擎 + 1 模板侧）；去掉 7 处 `default` 造假。详见 `TEMPLATE-GUIDE.md` 第 8 节 |
 | v3 | 修正 12 处文档与现状不符；澄清「作用域与文件排版无关」；确定真实交付物与覆盖边界；补与现成方案的对比；路线重排为三批次 + 两个决定性实验 |
@@ -31,7 +33,7 @@
 |---|---|---|
 | 台账列覆盖 | **19 / 19** | **9 / 19** |
 | 规模验证 | 8440 文件 / 627 万接口 / **0 失败** | 318 台 / 166 万接口块内命令行，接口块内覆盖率 **100%**；回归基线 2 fixture / 14 记录 |
-| 交付模板 | 华为 1 份 | 华为 15 集合 + 诺基亚（诺基亚仅 1 个集合） |
+| 交付模板 | 华为 1 份 | 华为 18 集合（新增 StaticUsers/QosProfiles）+ 诺基亚（诺基亚仅 1 个集合） |
 | 跨厂商 | 华为 | 华为 + 诺基亚（未交付） |
 
 **结论**：方案成立，但**成立的部分比它宣称的要多、宣称的顺序比实际的错位**。

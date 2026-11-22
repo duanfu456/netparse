@@ -135,7 +135,7 @@ src/netparse/
     └─ readonly.py     只读基线
 tools/                 兼容 shim（旧命令仍可用）+ legacy/ 历史探针
                        + _probe_*.py 测量脚本（守恒 / 缺口 / 基线 / 形态统计）
-templates/             模板（华为 VRP 15 集合 / 中兴 M6000 / Nokia SROS）
+templates/             模板（华为 VRP 18 集合 / 中兴 M6000 / Nokia SROS）
 tests/                 单元测试与 fixture 回归
 ```
 
@@ -151,6 +151,7 @@ tests/                 单元测试与 fixture 回归
 | transform | 字段级 `func=` + `[python]`/`[python_file]` 双段；接口类型 0% → **100%**（21,427 接口） |
 | exe 打包 | `dist/netparse.exe`（~7MB 单文件，PyInstaller），接收方无需 Python |
 | AI skill 分发包 | `skills/netparse/` 自包含：exe + 模板 + 速查文档 + SKILL.md，拷进 AI 工具 skills 目录即用 |
+| 多 target 语法 | `-> In{...};Out{...}`（`;` 分隔），一条规则写多个目标——QosProfiles In/Out 视图即此实现 |
 | 编辑器 | 本地 Web（`python editor/server.py`）：lint 实时检查、`${` 字段补全、集合折叠、选中试运行、保存守门 |
 | 台账 19 列 | 8/19 完整对齐，其余列的模板规则已补，**台账口径复测未跑** |
 
