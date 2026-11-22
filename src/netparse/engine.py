@@ -1111,61 +1111,65 @@ def _apply(fr, line, compiled, last, from_start=False, ctx=None):
             apply_writes(fr.rec, writes, coll, registry, tw, coll.name)
             return True
 
-        kind, a, b = parse_target(target)
-        if kind == "members":
-            base, members = a, b
-            obj = OrderedDict()
-            for mem in members:
-                if "=" in mem:
-                    k2, _, v2 = mem.partition("=")
-                    obj[k2.strip()] = parse_literal(v2)
+        # 多 target：'-> A{...};B{...}' 用 ';' 分割，每段独立执行完整 target 语义
+        for tgt in [t.strip() for t in target.split(";")] or [target]:
+            if not tgt:
+                continue
+            kind, a, b = parse_target(tgt)
+            if kind == "members":
+                base, members = a, b
+                obj = OrderedDict()
+                for mem in members:
+                    if "=" in mem:
+                        k2, _, v2 = mem.partition("=")
+                        obj[k2.strip()] = parse_literal(v2)
+                    else:
+                        # 成员名先按完整路径找，再按相对 base 的路径找
+                        grp = cr.path_groups.get(mem) or cr.path_groups.get(base + "." + mem)
+                        if grp and cr.group_paths.get(grp) in masked:
+                            obj[mem] = masked[cr.group_paths[grp]]
+                        elif mem in masked:
+                            obj[mem] = masked[mem]
+                if base == coll.name:
+                    # 目标就是当前集合 → 写进当前记录
+                    apply_writes(fr.rec, [(k, v) for k, v in obj.items()], coll, registry, tw, coll.name)
+                elif base in coll.all_fields:
+                    # 目标是本层的嵌套字段（list → 追加元素，dict → 写进去）
+                    apply_writes(fr.rec, [(base + "." + k, v) for k, v in obj.items()], coll, registry, tw, coll.name)
                 else:
-                    # 成员名先按完整路径找，再按相对 base 的路径找
-                    grp = cr.path_groups.get(mem) or cr.path_groups.get(base + "." + mem)
-                    if grp and cr.group_paths.get(grp) in masked:
-                        obj[mem] = masked[cr.group_paths[grp]]
-                    elif mem in masked:
-                        obj[mem] = masked[mem]
-            if base == coll.name:
-                # 目标就是当前集合 → 写进当前记录
-                apply_writes(fr.rec, [(k, v) for k, v in obj.items()], coll, registry, tw, coll.name)
-            elif base in coll.all_fields:
-                # 目标是本层的嵌套字段（list → 追加元素，dict → 写进去）
-                apply_writes(fr.rec, [(base + "." + k, v) for k, v in obj.items()], coll, registry, tw, coll.name)
-            else:
-                # 目标是一个（未展开的）子集合 → 塞进当前记录
-                fr.rec[base] = dict(obj)
-        else:   # assigns
-            items = a
-            top_items = [(n, v) for n, v in items if "." not in n]
-            path_items = [(n, v) for n, v in items if "." in n]
-            out = []
-            if top_items:
-                # 顶层字段：先铺捕获组，再写常量。
-                # ⚠️ v 为 None 表示 `-> A,B` 这种「只点名、不给常量」的写法，
-                #    值应当来自同名捕获组（已在 writes 里）。若直接 append
-                #    (n, None) 会把捕获到的真值覆盖成 None —— 实测让
-                #    `access-type … authentication ont_rms_01` 的 AccessType /
-                #    AuthDomain 双双击成 null。这里只补 writes 里没有的常量。
-                out += writes
-                written = {p for p, _ in writes}
-                for n, v in top_items:
+                    # 目标是一个（未展开的）子集合 → 塞进当前记录
+                    fr.rec[base] = dict(obj)
+            else:   # assigns
+                items = a
+                top_items = [(n, v) for n, v in items if "." not in n]
+                path_items = [(n, v) for n, v in items if "." in n]
+                out = []
+                if top_items:
+                    # 顶层字段：先铺捕获组，再写常量。
+                    # ⚠️ v 为 None 表示 `-> A,B` 这种「只点名、不给常量」的写法，
+                    #    值应当来自同名捕获组（已在 writes 里）。若直接 append
+                    #    (n, None) 会把捕获到的真值覆盖成 None —— 实测让
+                    #    `access-type … authentication ont_rms_01` 的 AccessType /
+                    #    AuthDomain 双双击成 null。这里只补 writes 里没有的常量。
+                    out += writes
+                    written = {p for p, _ in writes}
+                    for n, v in top_items:
+                        if v is None:
+                            if n in written:
+                                continue        # 捕获组已经写过，别覆盖
+                            if n in masked:
+                                out.append((n, masked[n]))
+                            continue
+                        out.append((n, v))
+                for n, v in path_items:
+                    # 嵌套路径：只写这一个路径，不铺其它捕获组
                     if v is None:
-                        if n in written:
-                            continue            # 捕获组已经写过，别覆盖
-                        if n in masked:
-                            out.append((n, masked[n]))
-                        continue
-                    out.append((n, v))
-            for n, v in path_items:
-                # 嵌套路径：只写这一个路径，不铺其它捕获组
-                if v is None:
-                    if n not in masked:
-                        continue
-                    out.append((n, masked[n]))
-                else:
-                    out.append((n, v))
-            apply_writes(fr.rec, out, coll, registry, tw, coll.name)
+                        if n not in masked:
+                            continue
+                        out.append((n, masked[n]))
+                    else:
+                        out.append((n, v))
+                apply_writes(fr.rec, out, coll, registry, tw, coll.name)
         return True
     return False
 
@@ -1207,30 +1211,33 @@ def _rule_fields(c, rule, coll_by_name):
             out.append(f)
     if not rule.target:
         return out
-    kind, a, b = parse_target(rule.target)
-    if kind != "members":
-        return out
-    base, members = a, b
-    if base == c.name:
-        for mem in members:
-            key = mem.split("=")[0].strip()
-            f = c.all_fields.get(key)
-            if f is not None:
-                out.append(f)
-    elif base in c.all_fields:
-        for mem in members:
-            key = mem.split("=")[0].strip()
-            f = c.all_fields.get(base + "." + key)
-            if f is not None:
-                out.append(f)
-    else:
-        tc = coll_by_name.get(base)
-        if tc is not None:
+    for tgt in [t.strip() for t in rule.target.split(";")] or [rule.target]:
+        if not tgt:
+            continue
+        kind, a, b = parse_target(tgt)
+        if kind != "members":
+            continue
+        base, members = a, b
+        if base == c.name:
             for mem in members:
                 key = mem.split("=")[0].strip()
-                f = tc.all_fields.get(key)
+                f = c.all_fields.get(key)
                 if f is not None:
                     out.append(f)
+        elif base in c.all_fields:
+            for mem in members:
+                key = mem.split("=")[0].strip()
+                f = c.all_fields.get(base + "." + key)
+                if f is not None:
+                    out.append(f)
+        else:
+            tc = coll_by_name.get(base)
+            if tc is not None:
+                for mem in members:
+                    key = mem.split("=")[0].strip()
+                    f = tc.all_fields.get(key)
+                    if f is not None:
+                        out.append(f)
     return out
 
 
@@ -1327,19 +1334,22 @@ def lint(colls):
                                    + " 未声明 type(secret)"))
             if not r.target:
                 continue
-            kind, a, b = parse_target(r.target)
-            if kind == "members":
-                base, members = a, b
-                for mem in members:
-                    key = mem.split("=")[0].strip()
-                    if key and key not in c.all_fields and base == c.name:
-                        issues.append(("错误", c.name, f"目标里的字段 {key} 未声明"))
-            else:
-                for name, _v in a:
-                    if "." not in name and name not in c.all_fields:
-                        issues.append(("错误", c.name, f"目标字段 {name} 未声明"))
-                    elif "." in name and name not in c.all_fields:
-                        issues.append(("错误", c.name, f"目标路径 {name} 未声明"))
+            for tgt in [t.strip() for t in r.target.split(";")] or [r.target]:
+                if not tgt:
+                    continue
+                kind, a, b = parse_target(tgt)
+                if kind == "members":
+                    base, members = a, b
+                    for mem in members:
+                        key = mem.split("=")[0].strip()
+                        if key and key not in c.all_fields and base == c.name:
+                            issues.append(("错误", c.name, f"目标里的字段 {key} 未声明"))
+                else:
+                    for name, _v in a:
+                        if "." not in name and name not in c.all_fields:
+                            issues.append(("错误", c.name, f"目标字段 {name} 未声明"))
+                        elif "." in name and name not in c.all_fields:
+                            issues.append(("错误", c.name, f"目标路径 {name} 未声明"))
     return issues
 
 

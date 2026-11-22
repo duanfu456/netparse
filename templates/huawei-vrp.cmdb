@@ -601,6 +601,59 @@ Detect     type(bool) desc(是否在线检测)
 QosProfiles type(list) start(^qos-profile\s) end(^#$) end_indent(0) desc(QoS Profile 全局定义)
 [value]
 Name type(str) reg(\S+) option(Key) desc(Profile 名)
+In  type(dict) desc(入方向限速；行尾无方向的 car 行 = in/out 同参，In/Out 各写一份)
+  Cir    type(int) reg(\d+) desc(CIR kbps)
+  Pir    type(int) reg(\d+) desc(PIR kbps)
+  Cbs    type(int) reg(\d+) desc(CBS 字节)
+  Pbs    type(int) reg(\d+) desc(PBS 字节)
+  Green  type(str) reg(\S+) desc(绿色动作)
+  Yellow type(str) reg(\S+) desc(黄色动作)
+  Red    type(str) reg(\S+) desc(红色动作)
+  UqCir  type(int) reg(\d+) desc(user-queue CIR)
+  UqPir  type(int) reg(\d+) desc(user-queue PIR)
+  UqDir  type(str) reg(\S+) desc(user-queue 方向)
+Out type(dict) desc(出方向限速；无方向行 = 从 In 复制（out_* transform）)
+  Cir    type(int) func=out_cir desc(CIR kbps)
+  Pir    type(int) func=out_pir desc(PIR kbps)
+  Cbs    type(int) func=out_cbs desc(CBS 字节)
+  Pbs    type(int) func=out_pbs desc(PBS 字节)
+  Green  type(str) func=out_green desc(绿色动作)
+  Yellow type(str) func=out_yellow desc(黄色动作)
+  Red    type(str) func=out_red desc(红色动作)
+[rule]
+^qos-profile\s+${Name}(?:\s+.*)?\s*$
+# 无方向 car 行：';' 双 target → In 与 Out 各写一份（引擎多 target 语法）
+^ {1}car\s+cir\s+${In.Cir}
+      (?:\s+pir\s+${In.Pir})?
+      (?:\s+cbs\s+${In.Cbs})?
+      (?:\s+pbs\s+${In.Pbs})?
+      \s+green\s+${In.Green}
+      (?:\s+yellow\s+${In.Yellow})?
+      \s+red\s+${In.Red}(?!\s+(?:inbound|outbound))\s*$
+      -> In{Cir,Pir,Cbs,Pbs,Green,Yellow,Red}
+# inbound 行：只写 In
+^ {1}car\s+cir\s+${In.Cir}
+      (?:\s+pir\s+${In.Pir})?
+      (?:\s+cbs\s+${In.Cbs})?
+      (?:\s+pbs\s+${In.Pbs})?
+      \s+green\s+${In.Green}
+      (?:\s+yellow\s+${In.Yellow})?
+      \s+red\s+${In.Red}\s+inbound\s*$
+      -> In{Cir,Pir,Cbs,Pbs,Green,Yellow,Red}
+# outbound 行：只写 Out
+^ {1}car\s+cir\s+${Out.Cir}
+      (?:\s+pir\s+${Out.Pir})?
+      (?:\s+cbs\s+${Out.Cbs})?
+      (?:\s+pbs\s+${Out.Pbs})?
+      \s+green\s+${Out.Green}
+      (?:\s+yellow\s+${Out.Yellow})?
+      \s+red\s+${Out.Red}\s+outbound\s*$
+      -> Out{Cir,Pir,Cbs,Pbs,Green,Yellow,Red}
+# user-queue 行（块内与 car 并列，收进 In 视图的 Uq 字段）
+^ {1}user-queue\s+cir\s+${In.UqCir}\s+pir\s+${In.UqPir}\s+${In.UqDir}\s*$
+      -> In{UqCir,UqPir,UqDir}
+[value]
+Name type(str) reg(\S+) option(Key) desc(Profile 名)
 In  type(dict) func=in_view desc(入方向限速（含无方向行的双向参数）)
 Out type(dict) func=out_view desc(出方向限速（无方向行同 In；outbound 行专用值）)
 [rule]
