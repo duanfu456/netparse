@@ -6,6 +6,8 @@ const fs = require('fs');
 
 // ── 诊断集合 ──
 const diagColl = vscode.languages.createDiagnosticCollection('netparse');
+let outChannel = null;
+let activeSelftestDoc = null;   // 最近一次点 CodeLens 的文档
 
 function activate(ctx) {
     // ── 1. 自动补全（段头感知）──
@@ -22,6 +24,14 @@ function activate(ctx) {
     // ── 3. 定义跳转：${Field} → 字段声明行；import x → 该文件 ──
     ctx.subscriptions.push(vscode.languages.registerDefinitionProvider(
         'cmdb', new CmdbDefinitionProvider()));
+
+    // ── 4. [__main__] CodeLens：▶ 运行自测试 ──
+    ctx.subscriptions.push(vscode.languages.registerCodeLensProvider(
+        'cmdb', new CmdbCodeLensProvider()));
+    outChannel = vscode.window.createOutputChannel('netparse [__main__]');
+    ctx.subscriptions.push(outChannel);
+    ctx.subscriptions.push(vscode.commands.registerCommand(
+        'netparse.runSelftest', () => runSelftest()));
 }
 
 function deactivate() {}
@@ -218,3 +228,69 @@ function item(label, detail, kind) {
 }
 
 module.exports = { activate, deactivate };
+
+
+// ═══ [__main__] CodeLens 与自测试执行 ═══
+class CmdbCodeLensProvider {
+    provideCodeLenses(doc) {
+        const lenses = [];
+        let inMain = false;
+        let mainLine = -1;
+        for (let i = 0; i < doc.lineCount; i++) {
+            const t = doc.lineAt(i).text.trim();
+            if (t.toLowerCase() === '[__main__]') { inMain = true; mainLine = i; break; }
+        }
+        if (mainLine >= 0) {
+            const hasCode = doc.lineCount > mainLine + 1 &&
+                doc.lineAt(mainLine + 1).text.trim() !== '';
+            if (hasCode) {
+                lenses.push(new vscode.CodeLens(
+                    new vscode.Range(mainLine, 0, mainLine, 12),
+                    { title: '\u25B6 \u8fd0\u884c\u81ea\u6d4b\u8bd5\uff08[__main__]\uff09',
+                      command: 'netparse.runSelftest',
+                      arguments: [doc.uri] }));
+            }
+        }
+        return lenses;
+    }
+}
+
+async function runSelftest(uriArg) {
+    const uri = uriArg || (vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri);
+    if (!uri || uri.scheme !== 'file') {
+        vscode.window.showWarningMessage('netparse: \u6ca1\u6709\u53ef\u8fd0\u884c\u7684 .cmdb \u6587\u4ef6');
+        return;
+    }
+    activeSelftestDoc = uri;
+    outChannel.clear();
+    outChannel.show(true);
+    const cfg = vscode.workspace.getConfiguration('netparse');
+    const bin = cfg.get('lintPath', 'netparse');
+    const cwd = path.dirname(uri.fsPath);
+    outChannel.appendLine('[netparse] \u8fd0\u884c\u81ea\u6d4b\u8bd5: ' + uri.fsPath);
+    outChannel.appendLine('[netparse] \u5f15\u64ce: ' + bin);
+    outChannel.appendLine('');
+    // parse 模板会自动执行 [__main__] 段——stdout/stderr 都展示
+    execFile(bin, ['parse', uri.fsPath, '--json'],
+        { cwd, timeout: 60000, maxBuffer: 8 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+            if (stderr) outChannel.appendLine(stderr);
+            if (stdout) {
+                // JSON 主体折叠展示（前 60 行），完整结果可用 ↓ 命令重跑导出
+                const ls = stdout.split('\n');
+                outChannel.appendLine('--- \u89e3\u6790\u7ed3\u679c JSON\uff08\u524d 60 \u884c\uff09 ---');
+                outChannel.appendLine(ls.slice(0, 60).join('\n'));
+                if (ls.length > 60) outChannel.appendLine('... \u5171 ' + ls.length + ' \u884c');
+            }
+            if (err) {
+                const msg = (err.message || '').split('\n')[0];
+                outChannel.appendLine('');
+                outChannel.appendLine('[FAIL] ' + msg);
+                vscode.window.showErrorMessage('netparse \u81ea\u6d4b\u8bd5\u5931\u8d25: ' + msg);
+            } else {
+                outChannel.appendLine('');
+                outChannel.appendLine('[PASS] \u81ea\u6d4b\u8bd5\u901a\u8fc7\uff08\u6a21\u677f\u52a0\u8f7d\u65e0\u5f02\u5e38\uff09');
+                vscode.window.showInformationMessage('netparse \u81ea\u6d4b\u8bd5\u901a\u8fc7');
+            }
+        });
+}
