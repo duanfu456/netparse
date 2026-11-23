@@ -32,6 +32,8 @@ function activate(ctx) {
     ctx.subscriptions.push(outChannel);
     ctx.subscriptions.push(vscode.commands.registerCommand(
         'netparse.runSelftest', () => runSelftest()));
+    ctx.subscriptions.push(vscode.commands.registerCommand(
+        'netparse.exportSelftestJson', exportSelftestJson));
 }
 
 function deactivate() {}
@@ -151,8 +153,7 @@ function maybeLint(doc) {
 }
 
 function lintDoc(doc) {
-    const cfg = vscode.workspace.getConfiguration('netparse');
-    const bin = cfg.get('lintPath', 'netparse');
+    const bin = getExecPath();
     const cwd = path.dirname(doc.uri.fsPath);
     execFile(bin, ['lint', doc.uri.fsPath, '--json'],
         { cwd, timeout: 15000, maxBuffer: 4 * 1024 * 1024 },
@@ -179,6 +180,14 @@ function lintDoc(doc) {
             diagColl.set(doc.uri, diags);
         });
 }
+
+// ── netparse 可执行路径：execPath 优先，兼容旧 lintPath ──
+function getExecPath() {
+    const cfg = vscode.workspace.getConfiguration('netparse');
+    return cfg.get('execPath') || cfg.get('lintPath', 'netparse');
+}
+
+let lastSelftestJson = null;   // 上次自测试的完整 JSON（导出用）
 
 // ── 辅助：扫描文档声明 ──
 function declaredFields(doc) {
@@ -255,6 +264,22 @@ class CmdbCodeLensProvider {
     }
 }
 
+async function exportSelftestJson() {
+    if (!lastSelftestJson) {
+        vscode.window.showWarningMessage(
+            'netparse: \u8fd8\u6ca1\u6709\u8fd0\u884c\u8fc7\u81ea\u6d4b\u8bd5\uff0c\u5148\u70b9 CodeLens \u8fd0\u884c\u4e00\u6b21');
+        return;
+    }
+    const doc = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
+    const base = (doc && doc.uri.scheme === 'file')
+        ? doc.uri.fsPath.replace(/\.cmdb$/i, '') + '.selftest.json'
+        : path.join(process.cwd(), 'selftest.json');
+    fs.writeFileSync(base, lastSelftestJson, 'utf-8');
+    outChannel.show(true);
+    outChannel.appendLine('[netparse] \u5b8c\u6574 JSON \u5df2\u5bfc\u51fa: ' + base);
+    vscode.window.showInformationMessage('netparse \u5b8c\u6574 JSON \u5df2\u4fdd\u5b58: ' + base);
+}
+
 async function runSelftest(uriArg) {
     const uri = uriArg || (vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri);
     if (!uri || uri.scheme !== 'file') {
@@ -264,8 +289,7 @@ async function runSelftest(uriArg) {
     activeSelftestDoc = uri;
     outChannel.clear();
     outChannel.show(true);
-    const cfg = vscode.workspace.getConfiguration('netparse');
-    const bin = cfg.get('lintPath', 'netparse');
+    const bin = getExecPath();
     const cwd = path.dirname(uri.fsPath);
     outChannel.appendLine('[netparse] \u8fd0\u884c\u81ea\u6d4b\u8bd5: ' + uri.fsPath);
     outChannel.appendLine('[netparse] \u5f15\u64ce: ' + bin);
@@ -276,11 +300,11 @@ async function runSelftest(uriArg) {
         (err, stdout, stderr) => {
             if (stderr) outChannel.appendLine(stderr);
             if (stdout) {
-                // JSON 主体折叠展示（前 60 行），完整结果可用 ↓ 命令重跑导出
+                lastSelftestJson = stdout;
                 const ls = stdout.split('\n');
                 outChannel.appendLine('--- \u89e3\u6790\u7ed3\u679c JSON\uff08\u524d 60 \u884c\uff09 ---');
                 outChannel.appendLine(ls.slice(0, 60).join('\n'));
-                if (ls.length > 60) outChannel.appendLine('... \u5171 ' + ls.length + ' \u884c');
+                if (ls.length > 60) outChannel.appendLine('... \u5171 ' + ls.length + ' \u884c\uff08\u53ef\u7528\u547d\u4ee4 "netparse: \u5bfc\u51fa\u4e0a\u6b21\u81ea\u6d4b\u8bd5\u7684\u5b8c\u6574 JSON" \u5bfc\u51fa\uff09');
             }
             if (err) {
                 const msg = (err.message || '').split('\n')[0];

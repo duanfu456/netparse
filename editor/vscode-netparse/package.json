@@ -2,7 +2,7 @@
   "name": "netparse-cmdb",
   "displayName": "netparse CMDB Template",
   "description": "netparse .cmdb 模板语法高亮、自动补全与 lint 实时诊断",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "netparse",
   "engines": {
     "vscode": "^1.60.0"
@@ -42,6 +42,11 @@
           "type": "string",
           "default": "netparse",
           "description": "netparse 可执行文件路径（用于实时 lint 诊断）"
+        },
+        "netparse.execPath": {
+          "type": "string",
+          "default": "netparse",
+          "description": "netparse 可执行文件路径（exe 完整路径 / PATH 中的命令名 / python 入口脚本包装）；lint 诊断与 [__main__] 自测试共用此路径"
         }
       }
     },
@@ -49,6 +54,10 @@
       {
         "command": "netparse.runSelftest",
         "title": "netparse: 运行 [__main__] 自测试"
+      },
+      {
+        "command": "netparse.exportSelftestJson",
+        "title": "netparse: 导出上次自测试的完整 JSON"
       }
     ]
   }
