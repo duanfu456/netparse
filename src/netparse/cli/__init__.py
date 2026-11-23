@@ -17,7 +17,27 @@ import sys
 
 from .. import __version__
 
-SUBCOMMANDS = ("parse", "lint", "diff", "route-forms", "readonly")
+SUBCOMMANDS = ("parse", "lint", "diff", "route-forms", "readonly", "all")
+
+
+def preprocess_argv(argv):
+    """解释器模式预处理：netparse main.np [...] → parse 子命令形态。"""
+    if not argv:
+        return argv
+    if argv[0] == "-m":
+        argv = argv[1:]          # -m <子命令> ... → <子命令> ...
+        return argv
+    if argv[0] in SUBCOMMANDS or argv[0] == "all":
+        return argv              # 旧子命令直通
+    if argv[0].startswith("-"):
+        return argv              # 全局 flag（--version 等）
+    # ── 解释器模式：argv[0] 是模板路径 ──
+    template = argv[0]
+    rest = argv[1:]
+    has_cfg = bool(rest) and not rest[0].startswith("-")
+    if has_cfg:
+        return ["parse", template, rest[0]] + rest[1:]
+    return ["parse", template, "--selftest"] + rest
 
 
 def build_parser():
@@ -29,6 +49,9 @@ def build_parser():
     sub = parser.add_subparsers(dest="command", metavar="{%s}" % ",".join(SUBCOMMANDS))
 
     # ── parse ──
+    p = sub.add_parser("all", help="全量自测：递归执行目录内全部模板的 [__main__] 段")
+    p.add_argument("template", help="入口模板路径（同目录全部 .np/.cmdb 一起测）")
+
     p = sub.add_parser("parse", help="按模板解析配置文件或配置文件夹")
     p.add_argument("template", help="模板路径（.np / .cmdb）")
     p.add_argument("config", nargs="?", default=None,
@@ -90,7 +113,13 @@ def _inject_lazy_args(parser, argv):
 
 
 def main(argv=None):
-    argv = list(sys.argv[1:] if argv is None else argv)
+    argv = preprocess_argv(list(sys.argv[1:] if argv is None else argv))
+
+    if argv and argv[0] == "all":
+        from . import all as _all
+        ap = build_parser()
+        args = ap.parse_args(argv)
+        return _all.main(args)
 
     lazy = _inject_lazy_args(None, argv)
     if lazy is not None:

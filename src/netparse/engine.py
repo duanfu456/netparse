@@ -240,7 +240,7 @@ def is_coll_decl(toks):
     return toks[1].startswith("type(")
 
 
-def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines,
+def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines, main_expect, main_expect_active,
                          seen_paths, imported_names, importing_from=None):
     """解析单个模板文件（include/import 的递归工作体）。
 
@@ -333,7 +333,7 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines,
                 sel = None if "*" in names else set(names)
                 _sub_main = []   # 子模板的 [__main__] 收集后丢弃（只有入口文件执行）
                 _parse_template_file(sub, colls, py_file_lines, py_blocks,
-                                     _sub_main, seen_paths, imported_names,
+                                     _sub_main, [], [False], seen_paths, imported_names,
                                      importing_from=sel)
                 continue
             if m_imp:
@@ -351,7 +351,7 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines,
                         "%s: import 的模板不存在: %s" % (path, sub))
                 _sub_main = []   # 子模板的 [__main__] 收集后丢弃（只有入口文件执行）
                 _parse_template_file(sub, colls, py_file_lines, py_blocks,
-                                     _sub_main, seen_paths, imported_names, None)
+                                     _sub_main, [], [False], seen_paths, imported_names, None)
                 continue
 
         if low in ("[value]", "[vlaue]", "[rule]", "[python]", "[python_file]", "[__main__]"):
@@ -413,6 +413,13 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines,
             if re.match(r"^[A-Z]\w*\s+type\(", s):
                 mode = None
                 # 落到下方段外分支正常处理集合声明
+            elif main_expect_active[0]:
+                # expect= | 块内容：缩进行原样收进 expect 文本
+                main_expect.append(s)
+                continue
+            elif s.strip() == "expect = |" or s.strip().startswith("expect=|"):
+                main_expect_active[0] = True
+                continue
             else:
                 main_lines.append(s)
                 continue
@@ -521,14 +528,17 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines,
     return merged_names
 
 
-def parse_template(path):
+def parse_template(path, *, main_cfg=None, main_argv=None):
+    # main_cfg/main_argv：CLI 解释器模式透传给 [__main__] 段的 cfg/argv
     colls = []
     py_file_lines = []   # [python_file] 段的路径行（声明顺序）
     py_blocks = []       # [python] 段代码块（物理顺序，处理时统一按出现顺序执行）
     main_lines = []      # [__main__] 自测试段代码行
+    main_expect = []     # expect= | 块文本行（声明式断言）
+    main_expect_active = [False]  # 可变容器（递归内层可改）
     seen_paths = {"on_stack": set(), "done": set()}
     imported_names = {}
-    _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines,
+    _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines, main_expect, main_expect_active,
                          seen_paths, imported_names, None)
     tpath = os.path.abspath(path)
 
@@ -642,21 +652,46 @@ def parse_template(path):
         code = "\n".join(main_lines)
         import io as _io
         _err = _sys.stderr
+        class _SelftestExit(SystemExit):
+            """段内 exit(code) 的显式失败信号（由 CLI 捕获转退出码）。"""
+            pass
+
         def _selftest_print(*a, **k):
             # [__main__] 段的 print 一律走 stderr——stdout 属于解析 JSON 输出
             kw = dict(k)
             kw["file"] = _err
             return print(*a, **kw)
+
+
         ns = {"__name__": "_np_selftest_%d" % id(pt),
               "colls": pt, "pt": pt,
               "run": _run_compat, "run_file": run_file, "run_str": run_str,
               "run_files": run_files, "run_nq": run_file,
               "print": _selftest_print,
               "engine": _sys.modules[__name__],
-              "here": os.path.dirname(tpath)}
+              "here": os.path.dirname(tpath),
+              "sys": _sys,
+              "cfg": main_cfg,
+              "argv": list(main_argv or []),}
+
+        def _summary(results):
+            """每集合一行摘要：名称 N 条 | Key 字段。"""
+            lines = []
+            for coll in pt:
+                recs = results.get(coll.name) or []
+                keyf = next((f.name for f in coll.fields.values()
+                             if "Key" in (f.flags or [])), None)
+                lines.append("%s %d 条 | %s" % (coll.name, len(recs), keyf or "-"))
+            return "\n".join(lines)
+        ns["summary"] = _summary
+        ns["exit"] = _SelftestExit
         # key= 行是合法 Python 赋值，直接 exec；整段在模板加载期执行一次
         try:
             exec(compile(code, "<%s [__main__]>" % (path,), "exec"), ns)
+        except _SelftestExit as e:
+            raise TemplateFileError(
+                "%s: [__main__] exit(%s) 显式退出"
+                % (path, e.code)) from None
         except SyntaxError as e:
             raise TemplateFileError(
                 "%s: [__main__] 段语法错误: %s" % (path, e)) from None
@@ -667,7 +702,96 @@ def parse_template(path):
                 "%s: [__main__] 自测试失败: %s: %s"
                 % (path, type(e).__name__, e)) from None
 
+        # ── 声明式断言 expect= + 逃生门 check()（自动流程）──
+        # 1) 有样例（cfgstr/cfgpath）→ 自动解析一次
+        # 2) expect= 逐行断言（路径=期望值；支持 count 与 >/< 比较）
+        # 3) check(res) 若定义 → 逃生门
+        expect_text = "\n".join(main_expect) if main_expect else ns.get("expect")
+        check_fn = ns.get("check")
+        if expect_text or check_fn:
+            src = ns.get("cfgstr")
+            if not src and ns.get("cfgpath"):
+                src = ns["cfgpath"]
+            if src:
+                results = _run_compat(src)
+            else:
+                raise TemplateFileError(
+                    "%s: [__main__] 有 expect/check 但没有 cfgstr/cfgpath 样例"
+                    % path) from None
+            if expect_text:
+                for lineno, fpath, want, actual in _run_expect(expect_text, results):
+                    raise TemplateFileError(
+                        "%s: [__main__] expect 断言失败（L%d）%s: 期望 %r, 实际 %r"
+                        % (path, lineno, fpath, want, actual)) from None
+            if check_fn:
+                check_fn(results)
+
     return pt
+
+
+def _get_by_path(results, path):
+    """expect 路径求值：Coll[0].Sub[1].Field / Coll.count。
+    返回 (actual, found)；找不到时 (None, False)。"""
+    import re as _re2
+    m = _re2.match(r"^([A-Z]\w*)(.*)$", path)
+    if not m:
+        return None, False
+    coll_name, rest = m.group(1), m.group(2)
+    obj = results.get(coll_name)
+    if obj is None:
+        return None, False
+    if rest == ".count":
+        return len(obj), True
+    segs = _re2.findall(r"\[(\d+)\]|\.(\w+)", rest)
+    cur = obj
+    for idx, key in segs:
+        if idx:
+            i = int(idx)
+            if not isinstance(cur, list) or i >= len(cur):
+                return None, False
+            cur = cur[i]
+        else:
+            if isinstance(cur, dict):
+                if key not in cur:
+                    return None, False
+                cur = cur[key]
+            elif isinstance(cur, list):
+                vals = [x.get(key) for x in cur if isinstance(x, dict)]
+                if not vals:
+                    return None, False
+                cur = vals if len(vals) > 1 else vals[0]
+            else:
+                return None, False
+    return cur, True
+
+
+def _run_expect(expect_text, results):
+    """expect= 文本 → [(行号, 路径, 期望, 实际)] 失败列表。"""
+    failures = []
+    op_map = {">=": lambda a, b: a >= b, "<=": lambda a, b: a <= b,
+              ">": lambda a, b: a > b, "<": lambda a, b: a < b}
+    for lineno, raw in enumerate(expect_text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        for op, cmp_fn in op_map.items():
+            if op in line:
+                fpath, want_s = line.split(op, 1)
+                actual, found = _get_by_path(results, fpath.strip())
+                if not found:
+                    failures.append((lineno, fpath.strip(), op + " " + want_s, "<缺失>"))
+                elif not cmp_fn(actual, float(want_s)):
+                    failures.append((lineno, fpath.strip(), op + " " + want_s, actual))
+                break
+        else:
+            if "=" in line:
+                fpath, want = line.split("=", 1)
+                fpath, want = fpath.strip(), want.strip()
+                actual, found = _get_by_path(results, fpath)
+                actual_s = "<缺失>" if not found else str(actual)
+                if not found or actual_s != want:
+                    failures.append((lineno, fpath, want, actual_s))
+    return failures
 
 
 class _ParsedTemplate(list):

@@ -82,7 +82,15 @@ def main(args):
     if args.no_mask_heuristic:
         masking.CONFIG.heuristic = False
 
-    colls = engine.parse_template(args.template)   # [__main__] 段在此执行
+    # 解释器模式透传：--selftest 时段内 cfg=剩余配置路径、argv=剩余参数
+    main_cfg = args.config if getattr(args, "selftest", False) and args.config else None
+    main_argv = []
+    if getattr(args, "selftest", False):
+        rest = [a for a in (sys.argv[1:] or []) if a not in ("-m",)]
+        # 取模板之后的参数（剔除已知 flag 开头的）
+        i = rest.index(args.template) + 1 if args.template in rest else len(rest)
+        main_argv = [a for a in rest[i:] if not a.startswith("-") and a != "--json" and a != "--selftest"]
+    colls = engine.parse_template(args.template, main_cfg=main_cfg, main_argv=main_argv)  # [__main__] 段在此执行
 
     # ── --selftest：只加载模板并执行 [__main__] 段，成功即 PASS ──
     if getattr(args, "selftest", False):
