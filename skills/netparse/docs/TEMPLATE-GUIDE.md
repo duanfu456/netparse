@@ -1287,6 +1287,7 @@ ip route-static 10.9.0.0 255.255.0.0 NULL0
 """
     res = run(cfgstr)                       ← run 自适应：文本/路径/行列表
     assert res["Device"][0]["SysName"] == "SMOKE-TEST-01"
+    open("smoke.json", "w", encoding="utf-8").write(res.to_json())   ← 直接转 JSON
     assert res["Interfaces"][0]["Type"] == "链路聚合"
     assert res["RouteStatics"][0]["NextHopIface"] == "NULL0"
     return "冒烟通过: 设备/接口/路由 全部命中"
@@ -1302,6 +1303,8 @@ print("[__main__]", _result)
 |---|---|
 | `colls` | 解析好的模板对象（import 进来的组也在里面） |
 | `run(x)` | 引擎解析入口；x 可为配置文本 / 配置文件路径 / 行列表（自适应） |
+| `res.to_json(indent=2)` | 解析结果直接转 JSON 文本（`j = res.to_json()`） |
+| `res.save(path)` | 解析结果落盘为 JSON 文件（UTF-8，ensure_ascii=False） |
 | `here` | 模板所在目录 |
 | `print` | **重定向到 stderr**（stdout 属于 `--json` 管道，不会被污染） |
 

@@ -564,6 +564,20 @@ def parse_template(path):
     pt = _ParsedTemplate(colls, registry, load_warnings)
 
     # [__main__] 专用智能 run：文本/路径/行列表 自适应
+    class _ResultDict(dict):
+        """解析结果 dict + to_json()：[__main__] 段内 res.to_json() 直接得 JSON 文本。"""
+
+        def to_json(self, indent=2):
+            import json as _json
+            return _json.dumps(self, ensure_ascii=False, indent=indent)
+
+        def save(self, path):
+            """同时落盘一份（UTF-8，ensure_ascii=False）。"""
+            import json as _json
+            with open(path, "w", encoding="utf-8") as fh:
+                _json.dump(self, fh, ensure_ascii=False, indent=2)
+            return path
+
     def _smart_run(source, fields=None):
         if isinstance(source, str):
             st = source.strip()
@@ -577,9 +591,9 @@ def parse_template(path):
                 full = (st if os.path.isabs(st)
                         else os.path.join(os.path.dirname(tpath), st))
                 with open(full, encoding="utf-8", errors="replace") as fh:
-                    return run(pt, fh.readlines(), fields=fields)
-            return run(pt, source.splitlines(), fields=fields)
-        return run(pt, source, fields=fields)   # 行列表直接透传
+                    return _ResultDict(run(pt, fh.readlines(), fields=fields))
+            return _ResultDict(run(pt, source.splitlines(), fields=fields))
+        return _ResultDict(run(pt, source, fields=fields))   # 行列表直接透传
 
     # ── [__main__] 自测试段：exec 到独立命名空间（脚本模式）──
     # 注入：colls（裸列表）/ pt（模板对象，run 需要其 registry 属性）/
