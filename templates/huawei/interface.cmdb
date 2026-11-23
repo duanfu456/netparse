@@ -1,0 +1,113 @@
+[python]
+# 将 eth-trunk 转换为 Eth-Trunk
+def EthTrunk(value, record=None):
+    if value is None or value == "":
+        return None
+    return "Eth-Trunk" + str(value)
+
+# kbps → Mbps
+def kbps_to_m(value, record=None):
+    """kbps → Mbps。value 捕获值为 str/int；None 时返回 None。"""
+    if value is None or value == "":
+        return None
+    return round(int(value) / 1024, 3)
+
+
+
+
+
+
+def to_cidr(entry,record=None) -> str:
+    import ipaddress
+    """'111.20.96.97 255.255.255.252' -> '111.20.96.97/30'"""
+    tokens = entry.split()
+    if len(tokens) == 2:                     # IP + 掩码（点分或 /30）
+        ip, mask = tokens
+        text = f"{ip}/{mask}"
+    elif len(tokens) == 1 and "/" in tokens[0]:
+        text = tokens[0]                     # 已经带 /，如 '111.20.96.97/24'
+    else:
+        raise ValueError(f"无法解析: {entry!r}")
+
+    print(str(ipaddress.IPv4Interface(text)))
+    return str(ipaddress.IPv4Interface(text))
+
+
+Interfaces type(list) start(^interface\s+) end(^#$) end_indent(0) desc(接口集合)
+[value]
+Name             type(str)  reg(\S+) desc(接口名) option(Key)
+AdminStatus      type(str)  default(up) reg(up|down) desc(管理状态)
+Description      type(str)  reg(.+) desc(描述)
+IPv4             type(list) desc(IPv4 地址集合)
+  Address        type(str)  reg(\S+\s+\S+) desc(IPv4 地址) func=to_cidr
+IPv6             type(list) desc(IPv6 地址集合)
+  Address        type(str)  reg(\S+) desc(IPv6 地址)
+VPN              type(str)  reg(\S+) desc(绑定 VPN 实例)
+VPN_TYPE         type(str)  desc(VPN 类型)
+EthTrunk         type(str)  reg(\d+) desc(所属聚合口) func=EthTrunk
+QosCar           type(dict) desc(接口限速)
+  In             type(dict) desc(入方向限速；无方向行 = in/out 同参，In/Out 各写一份)
+    Cir          type(int)  reg(\d+) desc(CIR) func=kbps_to_m
+  Out            type(dict) desc(出方向限速；无方向行 = 从 In 复制)
+    Cir          type(int)  reg(\d+) desc(CIR) func=kbps_to_m
+QosProfile       type(dict)  reg(\S+) desc(绑定 QoS Profile，不带方向时)
+  QosProfileIn     type(str)  reg(\S+) desc(入方向绑定 QoS Profile)
+  QosProfileOut    type(str)  reg(\S+) desc(出方向绑定 QoS Profile)
+TrafficPolicy    type(dict) desc(流量策略，不带方向时)
+  TrafficPolicyIn  type(str)  reg(\S+) desc(入方向流量策略)
+  TrafficPolicyOut type(str)  reg(\S+) desc(出方向流量策略)
+Bas              type(dict) desc(BAS)
+  Enable         type(bool) desc(BAS 使能)
+  Domain         type(str)  reg(\S+) desc(BAS 域名)
+Pim              type(dict) desc(PIM)
+  Mode           type(str)  reg(\S+) desc(PIM 模式)
+  DrPriority     type(int)  reg(\d+) desc(DR 优先级)
+  HelloInterval  type(int)  reg(\d+) desc(Hello 间隔)
+[rule]
+^interface\s+${Name}(?:\s+.*)?\s*$
+^ {0,1}description\s+${Description}\s*$
+^ {0,1}ip address\s+${IPv4.Address}$
+^ ipv6 address auto link-local
+^ {0,1}ipv6 address\s+${IPv6.Address}$
+^ {0,1}ip binding vpn-instance\s+${VPN}\s*$
+^ {0,1}eth-trunk\s+${EthTrunk}\s*$
+^ {0,1}qos car cir\s+${QosCar.In.Cir}.+discard$       -> QosCar.In{Cir};QosCar.Out{Cir=QosCar.In.Cir}
+^ {0,1}qos car cir\s+${QosCar.In.Cir}\s+discard\s+inbound$
+^ {0,1}qos car cir\s+${QosCar.Out.Cir}\s+discard\s+outbound$
+^ {0,1}qos-profile\s+${QosProfile.QosProfileIn}\s+inbound\s*$
+^ {0,1}qos-profile\s+${QosProfile.QosProfileOut}\s+outbound\s*$
+^ {0,1}traffic-policy\s+${TrafficPolicy.TrafficPolicyIn}\s+inbound\s*$
+^ {0,1}traffic-policy\s+${TrafficPolicy.TrafficPolicyOut}\s+outbound\s*$
+^ {0,1}bas\s*$ -> Bas.Enable=true
+^\s+access.+authentication\s+${Bas.Domain}\s*$
+^ {0,1}pim\s+${Pim.Mode}\s*$
+^ {0,1}pim hello-option dr-priority\s+${Pim.DrPriority}\s*$
+^ {0,1}pim timer hello\s+${Pim.HelloInterval}\s*$
+
+
+
+[__main__]
+
+
+mystr="""
+
+interface Eth-Trunk7.2480
+ vlan-type dot1q 2480
+ description TO-HBQ-shuilishudiandisangongchengju-zhuanxian
+ ip address 111.20.96.97 255.255.255.252
+ ip address 111.20.95.97 255.255.255.252 sub
+
+ ipv6 address auto link-local
+ ipv6 mtu 4474
+ pim hello-option dr-priority 100
+ pim sm
+ traffic-policy BeiAnWangZhang-FengDu outbound
+ traffic-policy BeiAnWangZhang-FengDu inbound
+ qos-profile car100m inbound identifier none 
+ qos-profile car100m outbound identifier none 
+ ip urpf strict
+#
+"""
+
+b=run(mystr).to_json()
+print(b)

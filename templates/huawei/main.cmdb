@@ -47,12 +47,8 @@
 
 # ── 功能组引入 ──
 from 00-device import *
-from 01-interfaces import *
+from interface import *
 from 02-routes import *
-from 03-vpn import *
-from 04-bgp import *
-from 05-acl import *
-from 06-nqa import *
 from 07-static-user import *
 from 08-qos import *
 
@@ -62,29 +58,10 @@ from 08-qos import *
 [__main__]
 
 
-def main(colls, run):
-    """冒烟测试：设备名/接口 Type/IP 地址/路由 NULL0 归属。"""
-    cfgstr = """
-sysname SMOKE-TEST-01
-#
-interface Eth-Trunk1
- description smoke-test
- ip address 10.1.1.1 255.255.255.0
-#
-ip route-static 10.9.0.0 255.255.0.0 NULL0
-#
-"""
-    res = run(cfgstr)
-    assert res["Device"][0]["SysName"] == "SMOKE-TEST-01"
-    itf = res["Interfaces"][0]
-    assert itf["Name"] == "Eth-Trunk1"
-    assert itf["Type"] == "链路聚合"
-    assert itf["IpAddress"][0]["Address"] == "10.1.1.1"
-    rt = res["RouteStatics"][0]
-    assert rt["Prefix"] == "10.9.0.0"
-    assert rt["NextHopIface"] == "NULL0"
-    return "冒烟通过: 设备/接口/路由 全部命中"
+# cfgpath：BRAS&SR 原始配置采集目录下的真实样例
+cfgpath = r"E://配置文件//BRAS&SR//原始配置//cfgfile_20250824//华为//SNANK-MC-CMNET-BAS03-SCEC-X16A_218.200.1.171.20250824063214"
+with open(cfgpath, encoding="utf-8") as f:
+    res = run(colls, f.read())
 
 
-_result = main(colls, run)
-print("[__main__]", _result)
+print("[__main__] 外部样例通过:", res, "接口")

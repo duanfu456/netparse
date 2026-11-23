@@ -578,7 +578,14 @@ def parse_template(path):
                 _json.dump(self, fh, ensure_ascii=False, indent=2)
             return path
 
-    def _smart_run(source, fields=None):
+    def _smart_run(source, colls_or_fields=None, fields=None):
+        # 兼容两种调用习惯：
+        #   run(x)              x = 文本/路径/行列表
+        #   run(colls, x)       第一参为模板对象/集合列表（显式传 colls），
+        #                       第二参才是数据——此时忽略第一参（引擎固定用 pt）
+        if colls_or_fields is not None and not isinstance(source, str):
+            # run(colls, data) 形态：source 是模板/集合，data 在第二参数
+            source = colls_or_fields
         if isinstance(source, str):
             st = source.strip()
             # 单行且是存在的文件路径 → 读文件；否则当配置文本
