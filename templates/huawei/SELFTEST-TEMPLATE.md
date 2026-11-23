@@ -10,7 +10,6 @@
 ```cmdb
 # ── 自测试段（引擎加载本模板时自动执行；失败 = 模板或样例写错）──
 [__main__]
-# netparse = r"D:/tools/netparse.exe"      ← 可选；不写用 PATH 里的
 
 
 def main(colls, run):

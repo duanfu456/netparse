@@ -60,7 +60,6 @@ from 08-qos import *
 
 # ── 自测试段（引擎加载本模板时自动执行；失败 = 模板或样例写错）──
 [__main__]
-netparse = r"D:/tools/netparse.exe"
 
 
 def main(colls, run):
