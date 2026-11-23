@@ -2,7 +2,7 @@
 
 > 面向对象：写 `.cmdb` 模板的人（网络工程师）
 > 配套：`FINAL-plan.md`（总方案：架构 / 语义 / CMDB 建模 / 实测数据）
-> 参考实现：`templates/huawei-vrp.cmdb`、`templates/nokia-sros.cmdb`
+> 参考实现：`templates/huawei-vrp.np`、`templates/nokia-sros.np`
 
 ---
 
@@ -139,7 +139,7 @@ Name type(str) reg(\S+) desc(接口名) option(Key)
 > 写了才启用新语义。**这是刻意做成 opt-in 的**——改 `#` 的出栈规则
 > 会影响所有既有模板，必须先证明零回归再切默认。
 
-> ⚠️ **`end` 的实际状态（2026-11 更新）**：`templates/huawei-vrp.cmdb` 的
+> ⚠️ **`end` 的实际状态（2026-11 更新）**：`templates/huawei-vrp.np` 的
 > `Interfaces` / `VpnInstances` / `Acls` / `Bgp` / `Nqas` 已声明
 > `end(^#$) end_indent(0)`（见 3.1.1「块分隔符」）。
 > 中兴的 `$`、诺基亚的 `exit` 仍需各自实测。
@@ -869,7 +869,7 @@ netparse lint <模板>
 它保证一个接口不漏。当前用探针跑：
 
 ```bash
-python tools/legacy/probe_coverage3.py templates/huawei-vrp.cmdb <配置文件>
+python tools/legacy/probe_coverage3.py templates/huawei-vrp.np <配置文件>
 ```
 
 输出按**命令族**给覆盖率与缺口样例。实测（华为 ME60-X16A）：
@@ -953,9 +953,9 @@ python tools/legacy/probe_coverage3.py templates/huawei-vrp.cmdb <配置文件>
 
 | 文件 | 覆盖 |
 |---|---|
-| `templates/huawei-vrp.cmdb` | 华为 VRP，15 个集合（8 个子集合），318 台验证 |
-| `templates/zte-m6000.cmdb` | 中兴 M6000，分区根命令模型（`!<section>` 分区靠缩进 0 根命令分流），64 台验证 |
-| `templates/nokia-sros.cmdb` | Nokia SR OS，1 集合 + 2 子集合 |
+| `templates/huawei-vrp.np` | 华为 VRP，15 个集合（8 个子集合），318 台验证 |
+| `templates/zte-m6000.np` | 中兴 M6000，分区根命令模型（`!<section>` 分区靠缩进 0 根命令分流），64 台验证 |
+| `templates/nokia-sros.np` | Nokia SR OS，1 集合 + 2 子集合 |
 
 | 命令 | 作用 |
 |---|---|
@@ -1216,13 +1216,13 @@ Out type(dict) desc(出方向限速)
    会被无方向规则先命中（可选段吃掉方向词），触发双写误判
 5. 字典键名不带集合前缀：`-> In{Cir}` 输出 `{"In": {"Cir": ...}}`
 
-**实战**（`templates/huawei-vrp.cmdb` QosProfiles）：无方向 / inbound /
+**实战**（`templates/huawei-vrp.np` QosProfiles）：无方向 / inbound /
 outbound / 混合 / user-queue 五种形态全量验证通过。
 
 
 ### 场景 18 · 模板模块化（import / from）
 
-模板大了以后按功能组拆分，main.cmdb 做入口组合。
+模板大了以后按功能组拆分，main.np 做入口组合。
 
 **语法**（仅段外，文件顶部）：
 
@@ -1236,11 +1236,11 @@ from routes import RouteStatics           ← 选择导入（子集合随父，�
 
 ```text
 templates/huawei/
-├─ main.cmdb            ← 入口：from 各组 import *（.cmdb 后缀可省略）
-├─ 00-device.cmdb       Device + [python_file] transforms_huawei.py
-├─ 01-interfaces.cmdb   Interfaces（92 字段全家桶）
-├─ 02-routes.cmdb / 03-vpn.cmdb / 04-bgp.cmdb / 05-acl.cmdb
-├─ 06-nqa.cmdb / 07-static-user.cmdb / 08-qos.cmdb
+├─ main.np            ← 入口：from 各组 import *（.cmdb 后缀可省略）
+├─ 00-device.np       Device + [python_file] transforms_huawei.py
+├─ 01-interfaces.np   Interfaces（92 字段全家桶）
+├─ 02-routes.np / 03-vpn.np / 04-bgp.np / 05-acl.np
+├─ 06-nqa.np / 07-static-user.np / 08-qos.np
 └─ transforms_huawei.py ← 随组走（相对本文件解析）
 ```
 
@@ -1256,7 +1256,7 @@ templates/huawei/
 顶层集合追加进同一条流水线；运行期与单文件完全一致（import 只决定组在不在，
 规则决定数据是什么，两者正交）。
 
-**实战验证**：`templates/huawei/main.cmdb`（9 组，`.cmdb` 后缀可省略）与单文件 `huawei-vrp.cmdb`
+**实战验证**：`templates/huawei/main.np`（9 组，`.cmdb` 后缀可省略）与单文件 `huawei-vrp.np`
 对同一配置的输出**逐字节一致**。
 
 
@@ -1320,10 +1320,10 @@ print("[__main__]", _result)
    不用它；留给插件 CodeLens 第二期
 4. 段定界：顶格集合声明行结束该段（与 `[python_file]` 同规则）
 
-**模块化交互**：`main.cmdb` 与各子模板都可带自己的 `[__main__]`；
+**模块化交互**：`main.np` 与各子模板都可带自己的 `[__main__]`；
 加载哪个文件就执行谁的段——单组调试时只跑本组冒烟。
 
 完整说明（注入对象/行为规则/常见错误对照）：`docs/__MAIN__-说明.md`。
 
-**实战**：华为单文件版与 `huawei/main.cmdb` 尾部各带冒烟段
+**实战**：华为单文件版与 `huawei/main.np` 尾部各带冒烟段
 （设备名/接口 Type/IpAddress/路由 NULL0 断言），每次加载自动验证。

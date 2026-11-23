@@ -15,7 +15,7 @@ sys.path.insert(0, HERE)
 from netparse import parse_template, run
 import _cfginspect as ci
 
-TPL = os.path.join(HERE, "..", "templates", "huawei-vrp.cmdb")
+TPL = os.path.join(HERE, "..", "templates", "huawei-vrp.np")
 FILES = ci.devices(limit=20)
 
 tpl = parse_template(TPL)

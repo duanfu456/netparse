@@ -5,12 +5,12 @@
 ## 快速对照
 
 ```bash
-netparse parse templates/huawei-vrp.cmdb device.cfg            # 解析：集合树 + 条数
-netparse parse templates/huawei-vrp.cmdb device.cfg --json     # 完整 JSON（stdout 纯 JSON）
-netparse parse templates/huawei-vrp.cmdb device.cfg --json --fields "Interfaces=Name,Type"
-netparse parse templates/huawei/main.cmdb --selftest           # 只加载模板跑 [__main__] 冒烟
-netparse lint  templates/huawei-vrp.cmdb                       # 模板体检
-netparse lint  templates/huawei-vrp.cmdb --strict              # 有警告也非零退出（CI 用）
+netparse parse templates/huawei-vrp.np device.cfg            # 解析：集合树 + 条数
+netparse parse templates/huawei-vrp.np device.cfg --json     # 完整 JSON（stdout 纯 JSON）
+netparse parse templates/huawei-vrp.np device.cfg --json --fields "Interfaces=Name,Type"
+netparse parse templates/huawei/main.np --selftest           # 只加载模板跑 [__main__] 冒烟
+netparse lint  templates/huawei-vrp.np                       # 模板体检
+netparse lint  templates/huawei-vrp.np --strict              # 有警告也非零退出（CI 用）
 netparse diff --sample 200                                     # 与生产台账 19 列对比（需只读语料）
 netparse readonly --verify                                     # 只读守卫：确认没改过生产文件
 ```
@@ -81,7 +81,7 @@ RouteStatics           type=list   ... Key=Prefix,Mask,NextHop,VpnInstance
 **`--json` 输出**：顶层 key 就是集合名，直接 `json.load` 或管道给 `jq`：
 
 ```bash
-netparse parse templates/huawei-vrp.cmdb device.cfg --json 2>/dev/null | jq ".Interfaces[0]"
+netparse parse templates/huawei-vrp.np device.cfg --json 2>/dev/null | jq ".Interfaces[0]"
 ```
 
 **批量上千台**：命令行文件夹模式即可（模板只编译一次）；需要更复杂逻辑（如按设备过滤、每台单独落文件）用库方式，见 PYTHON-GUIDE.md。
@@ -122,15 +122,15 @@ netparse lint <模板路径> [--json] [--strict]
 
 直接验证：
 
-    netparse parse templates/huawei-vrp.cmdb --json    # 加载即跑冒烟
+    netparse parse templates/huawei-vrp.np --json    # 加载即跑冒烟
 
 ## 模块化模板
 
 入口模板用 `import` / `from ... import *|集合名` 组合子模板（语法见
 TEMPLATE-GUIDE 场景 18）。CLI 用法不变——入口传 main 或任一子模板均可：
 
-    netparse parse templates/huawei/main.cmdb device.cfg --json
-    netparse parse templates/huawei/02-routes.cmdb device.cfg  # 单组调试
+    netparse parse templates/huawei/main.np device.cfg --json
+    netparse parse templates/huawei/02-routes.np device.cfg  # 单组调试
 
 引用路径相对**当前被解析文件**（模板文件夹整体拷贝引用不失效）。
 

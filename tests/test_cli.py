@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 
 import netparse  # noqa: E402
 
-TEMPLATE = os.path.join(ROOT, "templates", "huawei-vrp.cmdb")
+TEMPLATE = os.path.join(ROOT, "templates", "huawei-vrp.np")
 FIXTURE = os.path.join(HERE, "fixtures", "sample-vrp-secret.txt")
 
 FAILURES = []
@@ -152,7 +152,7 @@ with _tempfile.TemporaryDirectory() as _td:
         open(os.path.join(_cfg_dir, _n), "w", encoding="utf-8").write(_src)
     _out = os.path.join(_td, "batch.json")
 
-    r = _run_parse(os.path.join(ROOT, "templates", "huawei-vrp.cmdb"), _cfg_dir, _out)
+    r = _run_parse(os.path.join(ROOT, "templates", "huawei-vrp.np"), _cfg_dir, _out)
     # 批量模式：每个配置文件一个同名 .json（子目录结构保留，扩展名换 .json）
     _f1 = os.path.join(_out, "dev1.json")
     _f2 = os.path.join(_out, "dev2.json")
@@ -162,12 +162,12 @@ with _tempfile.TemporaryDirectory() as _td:
           and len(_d1.get("Interfaces", [])) == 4)
 
     out2 = os.path.join(_td, "single.json")
-    r2 = _run_parse(os.path.join(ROOT, "templates", "huawei-vrp.cmdb"),
+    r2 = _run_parse(os.path.join(ROOT, "templates", "huawei-vrp.np"),
                     os.path.join(ROOT, "tests", "fixtures", "sample-vrp.txt"), out2)
     d2 = _json.load(open(out2, encoding="utf-8")) if os.path.isfile(out2) else {}
     check("单文件 + 输出路径", r2.returncode == 0 and len(d2.get("Interfaces", [])) == 4)
 
-    r3 = _run_parse(os.path.join(ROOT, "templates", "huawei-vrp.cmdb"), _cfg_dir)
+    r3 = _run_parse(os.path.join(ROOT, "templates", "huawei-vrp.np"), _cfg_dir)
     check("文件夹缺输出路径报错", r3.returncode == 1
           and "必须指定输出目录" in (r3.stderr or ""))  # _cfg_dir 此时有 2 个文件
 

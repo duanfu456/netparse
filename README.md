@@ -28,7 +28,7 @@ PYTHONPATH=src python -m netparse --help
 ```python
 from netparse import parse_template, run
 
-colls = parse_template("templates/huawei-vrp.cmdb")
+colls = parse_template("templates/huawei-vrp.np")
 with open("device.cfg", encoding="utf-8") as f:
     result = run(colls, f.readlines())
 
@@ -42,7 +42,7 @@ for itf in result["Interfaces"]:
 from netparse import masking, parse_template, run
 
 masking.CONFIG.heuristic = False     # 只保留模板 type(secret) 的精确遮蔽
-colls = parse_template("templates/huawei-vrp.cmdb")
+colls = parse_template("templates/huawei-vrp.np")
 result = run(colls, lines)
 masking.CONFIG.reset()               # 复位
 ```
@@ -69,9 +69,9 @@ Type type(str) func=iface_type desc(接口类型)      ← 从 Name 派生
 ### 作为命令行
 
 ```bash
-netparse parse templates/huawei-vrp.cmdb device.cfg            # 集合树 + 条数
-netparse parse templates/huawei-vrp.cmdb device.cfg --json     # 完整 JSON
-netparse lint  templates/huawei-vrp.cmdb                       # 模板体检
+netparse parse templates/huawei-vrp.np device.cfg            # 集合树 + 条数
+netparse parse templates/huawei-vrp.np device.cfg --json     # 完整 JSON
+netparse lint  templates/huawei-vrp.np                       # 模板体检
 ```
 
 ## 子命令
@@ -139,7 +139,7 @@ src/netparse/
     └─ readonly.py     只读基线
 tools/                 兼容 shim（旧命令仍可用）+ legacy/ 历史探针
                        + _probe_*.py 测量脚本（守恒 / 缺口 / 基线 / 形态统计）
-templates/             模板（华为 VRP 18 集合单文件版 + huawei/ 模块化目录版（main.cmdb+9组）/ 中兴 M6000 / Nokia SROS）
+templates/             模板（华为 VRP 18 集合单文件版 + huawei/ 模块化目录版（main.np+9组）/ 中兴 M6000 / Nokia SROS）
 tests/                 单元测试与 fixture 回归
 ```
 
@@ -148,7 +148,7 @@ tests/                 单元测试与 fixture 回归
 | 指标 | 数值 |
 |---|---|
 | 华为模板 | 15 个集合（8 个子集合），接口块内覆盖率 **100%**（318 台 / 166 万行实测） |
-| 中兴模板 | `zte-m6000.cmdb`（分区根命令模型），64 台实测 0 失败 / 0 密文泄漏 |
+| 中兴模板 | `zte-m6000.np`（分区根命令模型），64 台实测 0 失败 / 0 密文泄漏 |
 | ACL 规则 | 14,723 / 14,723 全解析 |
 | 块数守恒 | 6 类块 × 20 台逐台核对全部一致 |
 | 脱敏 | 引擎层 `type(secret)` + 密文形态兜底（华为 + 中兴密文形态），全量零明文 |
@@ -157,7 +157,7 @@ tests/                 单元测试与 fixture 回归
 | AI skill 分发包 | `skills/netparse/` 自包含：exe + 模板 + 速查文档 + SKILL.md，拷进 AI 工具 skills 目录即用 |
 | 多 target 语法 | `-> In{...};Out{...}`（`;` 分隔），一条规则写多个目标——QosProfiles In/Out 视图即此实现 |
 | target 引用赋值 | `-> Out{Cir=In.Cir,...}`（键=捕获组路径），跨字段复制捕获值 |
-| 模板模块化 | `import x.cmdb` / `from x.cmdb import *\|集合名`，路径相对当前文件；循环检测/缺失报错/同名集合报错；`templates/huawei/main.cmdb` 为入口（9 组） |
+| 模板模块化 | `import x.cmdb` / `from x.cmdb import *\|集合名`，路径相对当前文件；循环检测/缺失报错/同名集合报错；`templates/huawei/main.np` 为入口（9 组） |
 | 限速单位换算 | QosProfiles Cir/Pir→M、Cbs/Pbs→MB（kbps_to_m / bytes_to_mb transform） |
 | 字段白名单 | `--fields "Interfaces=Name,Type,IpAddress"`（解析全量、输出按需；Key 字段自动保留；引用不存在集合名报错并列出可用集合） |
 | 真机批量回归 | `tools/batch_real.py`：模块化 vs 单文件输出逐一致校验（234 份 BRAS 真机 100% 一致） |

@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 from netparse import engine as P      # noqa: E402
 from netparse.masking import MASK_DEFAULT, is_secret_shape  # noqa: E402
 
-TEMPLATE = os.path.join(ROOT, "templates", "huawei-vrp.cmdb")
+TEMPLATE = os.path.join(ROOT, "templates", "huawei-vrp.np")
 FIXTURES = [
     ("sample-vrp", "sample-vrp.txt", "sample-vrp.expected.json"),
     ("sample-vrp-secret", "sample-vrp-secret.txt", "sample-vrp-secret.expected.json"),
@@ -173,7 +173,7 @@ def main():
     if "--update" in sys.argv:
         for name, sample, baseline in FIXTURES:
             res = parse(fixture_path(sample))
-            out = {"_comment": f"{sample} 用 templates/huawei-vrp.cmdb 解析的期望输出"
+            out = {"_comment": f"{sample} 用 templates/huawei-vrp.np 解析的期望输出"
                                  "（嵌套形状：子集合嵌在父元素里）。模板语法的回归基线。"}
             out.update(res)
             path = fixture_path(baseline)

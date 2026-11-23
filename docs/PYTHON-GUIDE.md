@@ -40,8 +40,8 @@ colls.selftest          # 段元数据（None = 模板无该段）
 
 ### 模块化模板
 
-`main.cmdb` 内 `from 01-interfaces import *` 组合子模板（`.cmdb` 后缀可省略）；
-`parse_template("templates/huawei/main.cmdb")` 加载入口即可，
+`main.np` 内 `from 01-interfaces import *` 组合子模板（`.cmdb` 后缀可省略）；
+`parse_template("templates/huawei/main.np")` 加载入口即可，
 引用路径相对当前文件、循环引用/同名集合会在加载期报错。
 
 **批量场景必须只编译一次**（编译开销远大于执行）：
@@ -107,7 +107,7 @@ masking.CONFIG.reset()             # 用完复位
 模板带 `[python_file]` / `[python]` 时：
 
 ```python
-colls = parse_template("templates/huawei-vrp.cmdb")   # 加载时已执行注册
+colls = parse_template("templates/huawei-vrp.np")   # 加载时已执行注册
 print(sorted(colls.registry))                          # 可用函数名清单
 result = run(colls, lines)
 warnings = colls.transform_warnings                    # 本次 run 的 transform 警告

@@ -38,8 +38,8 @@ from netparse import engine as P  # noqa: E402
 
 RAW_ROOT = r"E:\配置文件\BRAS&SR\原始配置"
 PARSE_ROOT = r"E:\配置文件\解析"
-HW_TPL = os.path.join(ROOT, "templates", "huawei-vrp.cmdb")
-NK_TPL = os.path.join(ROOT, "templates", "nokia-sros.cmdb")
+HW_TPL = os.path.join(ROOT, "templates", "huawei-vrp.np")
+NK_TPL = os.path.join(ROOT, "templates", "nokia-sros.np")
 
 VENDOR_HW = "华为"
 VENDOR_ZTE = "中兴"

@@ -30,7 +30,7 @@ def build_parser():
 
     # ── parse ──
     p = sub.add_parser("parse", help="按模板解析配置文件或配置文件夹")
-    p.add_argument("template", help="模板路径（.cmdb）")
+    p.add_argument("template", help="模板路径（.np / .cmdb）")
     p.add_argument("config", nargs="?", default=None,
                    help="配置文件或配置文件夹（文件夹=递归解析全部文件）；--selftest 时可省略")
     p.add_argument("output", nargs="?", default=None,
@@ -48,7 +48,7 @@ def build_parser():
 
     # ── lint ──
     p = sub.add_parser("lint", help="模板体检（不解析配置）")
-    p.add_argument("template", help="模板路径（.cmdb）")
+    p.add_argument("template", help="模板路径（.np / .cmdb）")
     p.add_argument("--json", action="store_true", help="以 JSON 输出问题列表")
     p.add_argument("--strict", action="store_true", help="有「警告」也返回非零退出码")
 

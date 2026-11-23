@@ -1,7 +1,7 @@
 # [__main__] 自测试段 — 完整说明
 
 > 适用：netparse 0.4+（引擎 `[__main__]` 段）、VSCode 插件 0.4+（CodeLens 运行）。
-> 配套范例：`main.cmdb` 尾部就是实际使用的自测试段。
+> 配套范例：`main.np` 尾部就是实际使用的自测试段。
 
 ---
 
@@ -116,7 +116,7 @@ print("[__main__] 外部样例通过:", len(res["Interfaces"]), "接口")
 5. **子模板单独自测**：每组 `.cmdb` 都可以有自己的 `[__main__]`（只测本组）；
    若本组字段用了 `func=`，组文件头部要自己声明
    `[python_file] transforms_huawei.py`（单组调试时无人替你提供）
-6. **模块化交互**：加载 `main.cmdb` 只执行 main 的段；加载 `02-routes.cmdb`
+6. **模块化交互**：加载 `main.np` 只执行 main 的段；加载 `02-routes.np`
    只执行 routes 的段——谁的文件谁的段
 7. **不需要写 netparse 路径**：`--selftest` 进程内直接执行段；
    exe/插件路径由调用方决定（PATH / VSCode `netparse.execPath` 设置）

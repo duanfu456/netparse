@@ -14,15 +14,15 @@
 
 | 位置 | 内容 |
 |---|---|
-| `templates/huawei-vrp.cmdb` | 华为 VRP **单文件版**（18 集合，与模块化版输出逐字节一致） |
-| `templates/huawei/main.cmdb` | 华为**模块化入口**：9 个功能组 + `SELFTEST-TEMPLATE.md`（自测试写法范本） |
-| `templates/nokia-sros.cmdb` | Nokia SR OS |
+| `templates/huawei-vrp.np` | 华为 VRP **单文件版**（18 集合，与模块化版输出逐字节一致） |
+| `templates/huawei/main.np` | 华为**模块化入口**：9 个功能组 + `SELFTEST-TEMPLATE.md`（自测试写法范本） |
+| `templates/nokia-sros.np` | Nokia SR OS |
 | `editor/vscode-netparse/` | VSCode 插件（高亮/补全/lint 诊断/CodeLens 自测试，`vsce package` 打 vsix） |
 
 ## 30 秒上手
 
 ```bash
-netparse parse templates/huawei/main.cmdb device.cfg --json          # 全量解析
-netparse parse templates/huawei/main.cmdb --selftest                 # 模板自测试
-netparse parse templates/huawei/main.cmdb device.cfg --json --fields "Interfaces=Name,Type"
+netparse parse templates/huawei/main.np device.cfg --json          # 全量解析
+netparse parse templates/huawei/main.np --selftest                 # 模板自测试
+netparse parse templates/huawei/main.np device.cfg --json --fields "Interfaces=Name,Type"
 ```

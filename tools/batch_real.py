@@ -1,4 +1,4 @@
-"""真机批量回归：模块化 main.cmdb vs 单文件版输出一致性 + 守恒/覆盖率统计。
+"""真机批量回归：模块化 main.np vs 单文件版输出一致性 + 守恒/覆盖率统计。
 
 用法：python tools/batch_real.py <配置目录> [--limit N]
 """
@@ -27,8 +27,8 @@ def main():
         files = files[:args.limit]
     print(f"样本：{len(files)} 份")
 
-    tpl_mod = os.path.join(ROOT, 'templates', 'huawei', 'main.cmdb')
-    tpl_single = os.path.join(ROOT, 'templates', 'huawei-vrp.cmdb')
+    tpl_mod = os.path.join(ROOT, 'templates', 'huawei', 'main.np')
+    tpl_single = os.path.join(ROOT, 'templates', 'huawei-vrp.np')
     c_mod = parse_template(tpl_mod)
     c_single = parse_template(tpl_single)
 

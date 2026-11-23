@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "src"))
 from netparse import parse_template, run
 
 D = "E:\\配置文件\\BRAS&SR\\原始配置\\cfgfile_20251224\\华为"
-TPL = os.path.join(HERE, "..", "templates", "huawei-vrp.cmdb")
+TPL = os.path.join(HERE, "..", "templates", "huawei-vrp.np")
 OUT = os.path.join(HERE, "_probe_baseline.json")
 
 # 固定样本：排序后取前 20 台，保证可复现

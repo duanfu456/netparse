@@ -319,9 +319,13 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines,
             if m_from:
                 rel, names_s = m_from.group(1), m_from.group(2)
                 if not os.path.splitext(rel)[1]:
-                    rel += ".cmdb"          # from x == from x.cmdb
-                sub = os.path.normpath(
-                    os.path.join(os.path.dirname(tpath), rel))
+                    # 双后缀兼容：from x == from x.np == from x.cmdb
+                    base = os.path.join(os.path.dirname(tpath), rel)
+                    sub = (base + ".np" if os.path.isfile(base + ".np")
+                           else base + ".cmdb")
+                else:
+                    sub = os.path.normpath(
+                        os.path.join(os.path.dirname(tpath), rel))
                 if not os.path.isfile(sub):
                     raise TemplateFileError(
                         "%s: import 的模板不存在: %s" % (path, sub))
@@ -335,9 +339,13 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines,
             if m_imp:
                 rel = m_imp.group(1).strip()
                 if not os.path.splitext(rel)[1]:
-                    rel += ".cmdb"          # import x == import x.cmdb
-                sub = os.path.normpath(
-                    os.path.join(os.path.dirname(tpath), rel))
+                    # 双后缀兼容：import x == import x.np == import x.cmdb
+                    base = os.path.join(os.path.dirname(tpath), rel)
+                    sub = (base + ".np" if os.path.isfile(base + ".np")
+                           else base + ".cmdb")
+                else:
+                    sub = os.path.normpath(
+                        os.path.join(os.path.dirname(tpath), rel))
                 if not os.path.isfile(sub):
                     raise TemplateFileError(
                         "%s: import 的模板不存在: %s" % (path, sub))

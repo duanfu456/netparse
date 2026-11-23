@@ -12,7 +12,7 @@
   模板新增 StaticUsers（static-user 静态用户）与 QosProfiles（qos-profile 块，In/Out 视图，限速单位 M/MB）；
   引擎新增 target 引用赋值（Out{Cir=In.Cir}）与 **模板模块化**
   （import/from 语法、相对当前文件路径、循环检测、同名集合报错；
-  templates/huawei/main.cmdb 9 组拆分，输出与单文件逐字节一致）；
+  templates/huawei/main.np 9 组拆分，输出与单文件逐字节一致）；
   `--fields` 字段白名单（输出层裁剪，Key 自动保留，未知集合名报错）；
   菱形依赖修复（on_stack/done 双集合区分循环与重复引用）；
   真机批量回归工具 tools/batch_real.py：234 份 BRAS 真机 234/234 输出一致，
@@ -35,7 +35,7 @@
 **不是什么**：
 - ❌ 不是通用 CMDB 采集器（硬件槽位、光模块、License、MAC 表、在线状态**配置里没有**，解析不出来）
 - ⚠️ "三厂商已验证"要拆开说：华为已交付（318 台验证 / 接口块内 100%）；中兴已交付
-  （2026-11-21，`zte-m6000.cmdb`，64 台实测 0 失败 / 0 密文泄漏）；诺基亚仍只有 6 台样本（未交付）
+  （2026-11-21，`zte-m6000.np`，64 台实测 0 失败 / 0 密文泄漏）；诺基亚仍只有 6 台样本（未交付）
 - ❌ 不是"缩进解析器"（**运行期完全不使用配置文件的缩进**，见 3.3）
 
 **现状硬数据**
@@ -626,7 +626,7 @@ if st.startswith("#") and len(st) <= 2:
 8440/8440 文件接口数一致；19 列诊断**零 INSUFFICIENT**。
 回归：`tests/test_engine_scope.py`（9 项）、`tests/test_diff_incumbent.py`（72 项）。
 
-> **待办**：`templates/nokia-sros.cmdb` 注释写明「用 `exit` 退出块」但未声明 `end`，
+> **待办**：`templates/nokia-sros.np` 注释写明「用 `exit` 退出块」但未声明 `end`，
 > 属同类隐患；本仓库无 Nokia 回归样本，留待有样本后补 `end(^\s*exit\s*$)` 并实测。
 
 ### 6.3b 缩进驱动层级（2026-11-20，模板审查轮）
@@ -837,10 +837,10 @@ netparse/                      ← 已规整为 Python 库（pyproject.toml，�
 │  ├─ server.py            ← 零依赖 http 服务：/api/lint /api/parse /api/parse-frag /api/save
 │  └─ index.html           ← 三栏 UI：高亮编辑 + lint 面板 + 解析结果/命中明细
 ├─ templates/
-│  ├─ huawei-vrp.cmdb      ← 华为 VRP，15 个集合（8 个子集合）★ 交付模板（318 台验证）
+│  ├─ huawei-vrp.np      ← 华为 VRP，15 个集合（8 个子集合）★ 交付模板（318 台验证）
 │  ├─ transforms_huawei.py ← 华为字段 transform（iface_type 等，[python_file] 加载）
-│  ├─ zte-m6000.cmdb       ← 中兴 M6000，分区根命令模型（64 台验证，2026-11-21）
-│  └─ nokia-sros.cmdb      ← Nokia SR OS，1 集合 + 2 子集合（实验用，未完成）
+│  ├─ zte-m6000.np       ← 中兴 M6000，分区根命令模型（64 台验证，2026-11-21）
+│  └─ nokia-sros.np      ← Nokia SR OS，1 集合 + 2 子集合（实验用，未完成）
 ├─ tests/
 │  ├─ fixtures/            ← 回归基线（sample-vrp*.txt + expected.json，双 fixture）
 │  ├─ run_regression.py    ← 回归比对（--update 覆盖基线）

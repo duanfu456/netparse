@@ -8,7 +8,7 @@ from netparse import parse_template, run
 
 D = "E:\\配置文件\\BRAS&SR\\原始配置\\cfgfile_20251224\\华为"
 FILES = [f for f in sorted(os.listdir(D)) if os.path.isfile(os.path.join(D, f))][:20]
-TPL = os.path.join(HERE, "..", "templates", "huawei-vrp.cmdb")
+TPL = os.path.join(HERE, "..", "templates", "huawei-vrp.np")
 
 
 def walk(path):

@@ -9,7 +9,7 @@ sys.path.insert(0, HERE)
 from netparse import parse_template, run
 import _cfginspect as ci
 
-TPL = os.path.join(HERE, "..", "templates", "huawei-vrp.cmdb")
+TPL = os.path.join(HERE, "..", "templates", "huawei-vrp.np")
 tpl = parse_template(TPL)
 
 # 块首命令 -> 模板集合名

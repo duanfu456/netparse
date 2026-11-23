@@ -40,7 +40,7 @@ def change_dir(name="netparse-v3-diff-and-mask"):
 
 def default_template():
     """默认模板（华为 VRP 台账口径）。"""
-    return os.path.join(templates_dir(), "huawei-vrp.cmdb")
+    return os.path.join(templates_dir(), "huawei-vrp.np")
 
 
 def baseline_template():
