@@ -675,13 +675,8 @@ Out type(dict) desc(出方向限速；无方向行 = 从 In 复制（out_* trans
 ^ {1}user-queue\s+cir\s+${In.UqCir}\s+pir\s+${In.UqPir}\s+${In.UqDir}\s*$
       -> In{UqCir,UqPir,UqDir}
 
-# ── 自测试段（引擎加载本模板时自动执行；失败 = 模板或样例写错）──
 [__main__]
-
-
-def main(colls, run):
-    """冒烟测试：设备名/接口 Type/IP 地址/路由 NULL0 归属。"""
-    cfgstr = """
+cfgstr = """
 sysname SMOKE-TEST-01
 #
 interface Eth-Trunk1
@@ -691,17 +686,10 @@ interface Eth-Trunk1
 ip route-static 10.9.0.0 255.255.0.0 NULL0
 #
 """
-    res = run(cfgstr)
-    assert res["Device"][0]["SysName"] == "SMOKE-TEST-01"
-    itf = res["Interfaces"][0]
-    assert itf["Name"] == "Eth-Trunk1"
-    assert itf["Type"] == "链路聚合"
-    assert itf["IpAddress"][0]["Address"] == "10.1.1.1"
-    rt = res["RouteStatics"][0]
-    assert rt["Prefix"] == "10.9.0.0"
-    assert rt["NextHopIface"] == "NULL0"
-    return "冒烟通过: 设备/接口/路由 全部命中"
-
-
-_result = main(colls, run)
-print("[__main__]", _result)
+expect = |
+  Device[0].SysName = SMOKE-TEST-01
+  Interfaces[0].Name = Eth-Trunk1
+  Interfaces[0].Type = 链路聚合
+  Interfaces[0].IpAddress[0].Address = 10.1.1.1
+  RouteStatics[0].Prefix = 10.9.0.0
+  RouteStatics[0].NextHopIface = NULL0

@@ -56,12 +56,23 @@ from 08-qos import *
 
 # ── 自测试段（引擎加载本模板时自动执行；失败 = 模板或样例写错）──
 [__main__]
+cfgstr = """
+sysname SMOKE-TEST-01
+#
+interface Eth-Trunk1
+ description smoke-test
+ ip address 10.1.1.1 255.255.255.0
+#
+ip route-static 10.9.0.0 255.255.0.0 NULL0
+#
+"""
+expect = |
+  Device[0].SysName = SMOKE-TEST-01
+  Interfaces[0].Name = Eth-Trunk1
+  Interfaces[0].IPv4[0].Address = 10.1.1.1/24
 
-
-# cfgpath：BRAS&SR 原始配置采集目录下的真实样例
-cfgpath = r"E://配置文件//BRAS&SR//原始配置//cfgfile_20250824//华为//SNANK-MC-CMNET-BAS03-SCEC-X16A_218.200.1.171.20250824063214"
-with open(cfgpath, encoding="utf-8") as f:
-    res = run(colls, f.read())
-
-
-print("[__main__] 外部样例通过:", res, "接口")
+# 程序化用法（可选）：命令行传入配置文件时解析它
+# if cfg:
+#     res = run_file(cfg)
+#     print(summary(res))
+#     print(res.to_json())

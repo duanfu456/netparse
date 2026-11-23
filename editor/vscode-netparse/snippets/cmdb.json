@@ -1,0 +1,56 @@
+{
+  "netparse __main__ 自测试段（完整示例）": {
+    "prefix": ["__main__", "main", "selftest"],
+    "body": [
+      "[__main__]",
+      "# ── 冒烟测试：cfgstr 样例 → expect 断言 → PASS/FAIL ──",
+      "cfgstr = \"\"\"",
+      "sysname SMOKE-TEST-01",
+      "#",
+      "interface Eth-Trunk1",
+      " description smoke-test",
+      " ip address 10.1.1.1 255.255.255.0",
+      "#",
+      "ip route-static 10.9.0.0 255.255.0.0 NULL0",
+      "#",
+      "\"\"\"",
+      "expect = |",
+      "# 路径.字段 = 期望值（一行一条；支持 [索引] 多级与 .count；> < >= <= 比较）",
+      "  Device[0].SysName = SMOKE-TEST-01",
+      "  Interfaces[0].Name = Eth-Trunk1",
+      "  Interfaces[0].Type = 链路聚合",
+      "  # Interfaces.count > 0",
+      "",
+      "# ── 以下为可选高级用法（默认全部注释，按需取消）──",
+      "# 外部配置文件替代 cfgstr：",
+      "# cfgpath = \"smoke-sample.cfg\"",
+      "",
+      "# 程序化：命令行传入配置文件时解析它（netparse main.np xxx.cfg）",
+      "# if cfg:",
+      "#     res = run_file(cfg)",
+      "#     print(summary(res))",
+      "#     print(res.to_json())",
+      "#     res.save(\"out.json\")",
+      "",
+      "# 多文件合并解析：",
+      "# res = run_files(\"a.cfg\", \"b.cfg\")",
+      "",
+      "# 复杂断言逃生门（expect 全过后执行）：",
+      "# def check(res):",
+      "#     for itf in res[\"Interfaces\"]:",
+      "#         assert itf.get(\"EthTrunk\"), itf[\"Name\"] + \" 缺聚合口\"",
+      "",
+      "# 显式失败退出：",
+      "# exit(1)"
+    ],
+    "description": "netparse [__main__] 自测试段：cfgstr 样例 + expect 断言 + 全部高级用法注释示例"
+  },
+  "netparse expect= 断言块": {
+    "prefix": ["expect"],
+    "body": [
+      "expect = |",
+      "  \\${1:Device}[0].\\${2:Field} = \\${3:期望值}"
+    ],
+    "description": "expect= 声明式断言块"
+  }
+}
