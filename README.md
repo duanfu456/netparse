@@ -155,6 +155,8 @@ tests/                 单元测试与 fixture 回归
 | target 引用赋值 | `-> Out{Cir=In.Cir,...}`（键=捕获组路径），跨字段复制捕获值 |
 | 模板模块化 | `import x.cmdb` / `from x.cmdb import *\|集合名`，路径相对当前文件；循环检测/缺失报错/同名集合报错；`templates/huawei/main.cmdb` 为入口（9 组） |
 | 限速单位换算 | QosProfiles Cir/Pir→M、Cbs/Pbs→MB（kbps_to_m / bytes_to_mb transform） |
+| 字段白名单 | `--fields "Interfaces=Name,Type,IpAddress"`（解析全量、输出按需；Key 字段自动保留；引用不存在集合名报错并列出可用集合） |
+| 真机批量回归 | `tools/batch_real.py`：模块化 vs 单文件输出逐一致校验（234 份 BRAS 真机 100% 一致） |
 | 编辑器 | 本地 Web（`python editor/server.py`）：lint 实时检查、`${` 字段补全、集合折叠、选中试运行、保存守门 |
 | 台账 19 列 | 8/19 完整对齐，其余列的模板规则已补，**台账口径复测未跑** |
 

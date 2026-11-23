@@ -12,7 +12,11 @@
   模板新增 StaticUsers（static-user 静态用户）与 QosProfiles（qos-profile 块，In/Out 视图，限速单位 M/MB）；
   引擎新增 target 引用赋值（Out{Cir=In.Cir}）与 **模板模块化**
   （import/from 语法、相对当前文件路径、循环检测、同名集合报错；
-  templates/huawei/main.cmdb 9 组拆分，输出与单文件逐字节一致） |
+  templates/huawei/main.cmdb 9 组拆分，输出与单文件逐字节一致）；
+  `--fields` 字段白名单（输出层裁剪，Key 自动保留，未知集合名报错）；
+  菱形依赖修复（on_stack/done 双集合区分循环与重复引用）；
+  真机批量回归工具 tools/batch_real.py：234 份 BRAS 真机 234/234 输出一致，
+  累计接口 146,915 / 路由 5,216 / VPN 2,493 / 静态用户 3,555 / QoS 748 |
 | v5（2026-11-21） | **transform 机制落地**：字段级 `func=` + `[python]`/`[python_file]` 双段（相对模板路径，自包含分发）；签名 `def f(value, record=None)`；双执行路径（捕获值 / commit 派生补算）；lint 五条新检查；华为模板接入 `iface_type`——接口类型 0% → **100%**（21,427 接口）。另：编辑器（高亮/补全/折叠/试运行/保存守门）、CLI 尾部放宽自动补齐。详见 `TEMPLATE-GUIDE.md` 场景 16 与 `.devforge/spec/changes/transform-func/design.md` |
 | v4（2026-11-20） | 按纯缩进模型重写华为模板（接口块内覆盖率 30.8% → **100%**）；引擎新增 `indent(n)` / `end_indent(n)`（均 opt-in）；修 6 个 bug（5 引擎 + 1 模板侧）；去掉 7 处 `default` 造假。详见 `TEMPLATE-GUIDE.md` 第 8 节 |
 | v3 | 修正 12 处文档与现状不符；澄清「作用域与文件排版无关」；确定真实交付物与覆盖边界；补与现成方案的对比；路线重排为三批次 + 两个决定性实验 |
