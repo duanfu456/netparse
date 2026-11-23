@@ -302,7 +302,7 @@ async function runSelftest(uriArg) {
     outChannel.appendLine('[netparse] \u5f15\u64ce: ' + bin);
     outChannel.appendLine('');
     // parse 模板会自动执行 [__main__] 段——stdout/stderr 都展示
-    execFile(bin, ['parse', uri.fsPath, '--json'],
+    execFile(bin, ['parse', uri.fsPath, '--selftest', '--json'],
         { cwd, timeout: 60000, maxBuffer: 8 * 1024 * 1024 },
         (err, stdout, stderr) => {
             if (stderr) outChannel.appendLine(stderr);
