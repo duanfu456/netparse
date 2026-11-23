@@ -97,13 +97,29 @@ LacpTimeout   type(str)  reg(\S+) desc(LACP 超时)
 Statistic     type(dict) desc(流量统计)
   Enable type(bool) desc(统计开关)
   Mode   type(str)  reg(\S+) desc(统计模式)
-QosCar        type(dict) desc(接口限速)
-  Cir        type(int) reg(\d+) desc(CIR kbps)
-  Pir        type(int) reg(\d+) desc(PIR kbps)
-  Cbs        type(int) reg(\d+) desc(CBS 字节)
-  Pbs        type(int) reg(\d+) desc(PBS 字节)
-  InboundCir type(int) reg(\d+) desc(入方向 CIR)
-  OutboundCir type(int) reg(\d+) desc(出方向 CIR)
+QosCar        type(dict) desc(接口限速（In/Out 分视图，单位 M/MB）)
+  Cir        type(int) reg(\d+) desc(CIR kbps，旧字段兼容)
+  Pir        type(int) reg(\d+) desc(PIR kbps，旧字段兼容)
+  Cbs        type(int) reg(\d+) desc(CBS 字节，旧字段兼容)
+  Pbs        type(int) reg(\d+) desc(PBS 字节，旧字段兼容)
+  InboundCir type(int) reg(\d+) desc(入方向 CIR，旧字段兼容)
+  OutboundCir type(int) reg(\d+) desc(出方向 CIR，旧字段兼容)
+  In  type(dict) desc(入方向限速；qos car 无方向行 = in/out 同参，In/Out 各写一份)
+    Cir type(int) func=kbps_to_m desc(CIR，单位 M)
+    Pir type(int) func=kbps_to_m desc(PIR，单位 M)
+    Cbs type(int) func=bytes_to_mb desc(CBS，单位 MB)
+    Pbs type(int) func=bytes_to_mb desc(PBS，单位 MB)
+    Green type(str) reg(\S+) desc(绿色报文动作)
+    Yellow type(str) reg(\S+) desc(黄色报文动作)
+    Red type(str) reg(\S+) desc(红色报文动作)
+  Out type(dict) desc(出方向限速；无方向行 = 从 In 复制)
+    Cir type(int) func=kbps_to_m desc(CIR，单位 M)
+    Pir type(int) func=kbps_to_m desc(PIR，单位 M)
+    Cbs type(int) func=bytes_to_mb desc(CBS，单位 MB)
+    Pbs type(int) func=bytes_to_mb desc(PBS，单位 MB)
+    Green type(str) reg(\S+) desc(绿色报文动作)
+    Yellow type(str) reg(\S+) desc(黄色报文动作)
+    Red type(str) reg(\S+) desc(红色报文动作)
 QosProfile    type(str)  reg(\S+) desc(绑定 QoS Profile)
 TrafficPolicy type(list) desc(流量策略)
   Name      type(str) reg(\S+) desc(策略名)
@@ -168,7 +184,7 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
 # 以下规则全部靠 indent(1) 限定在「恰好 1 个前导空格」的行上。
 # 注意不能在这里再声明 indent()，缩进锚定是集合级属性，
 # 所以这一组规则与 bas 正文规则分属两个集合（见下方 Bas）。
-^ {1}description\s+${Description}\s*$
+^ {0,1}description\s+${Description}\s*$
 ^ {1}mtu\s+${Mtu}\s*$
 ^ {1}speed\s+${Speed}\s*$
 ^ {1}duplex\s+${Duplex}\s*$
@@ -189,7 +205,13 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
 ^ {1}lacp timeout\s+${LacpTimeout}\s*$
 ^ {1}statistic enable\s*$        -> Statistic.Enable=true
 ^ {1}statistic mode\s+${Statistic.Mode}\s*$
-^ {1}qos car cir\s+${QosCar.Cir}(?:\s+pir\s+${QosCar.Pir})?(?:\s+cbs\s+${QosCar.Cbs})?(?:\s+pbs\s+${QosCar.Pbs})?\s*$
+# qos car（完整形态，green/yellow/red/方向 可选；无方向 = In/Out 双写）
+^ {0,1}qos car cir\s+${QosCar.In.Cir}(?:\s+pir\s+${QosCar.In.Pir})?(?:\s+cbs\s+${QosCar.In.Cbs})?(?:\s+pbs\s+${QosCar.In.Pbs})?(?:\s+green\s+${QosCar.In.Green})?(?:\s+yellow\s+${QosCar.In.Yellow})?(?:\s+red\s+${QosCar.In.Red})(?!\s+(?:inbound|outbound))\s*$
+      -> QosCar.In{Cir,Pir,Cbs,Pbs,Green,Yellow,Red};QosCar.Out{Cir=QosCar.In.Cir,Pir=QosCar.In.Pir,Cbs=QosCar.In.Cbs,Pbs=QosCar.In.Pbs,Green=QosCar.In.Green,Yellow=QosCar.In.Yellow,Red=QosCar.In.Red}
+^ {0,1}qos car cir\s+${QosCar.In.Cir}(?:\s+pir\s+${QosCar.In.Pir})?(?:\s+cbs\s+${QosCar.In.Cbs})?(?:\s+pbs\s+${QosCar.In.Pbs})?(?:\s+green\s+${QosCar.In.Green})?(?:\s+yellow\s+${QosCar.In.Yellow})?(?:\s+red\s+${QosCar.In.Red})\s+inbound\s*$
+      -> QosCar.In{Cir,Pir,Cbs,Pbs,Green,Yellow,Red}
+^ {0,1}qos car cir\s+${QosCar.Out.Cir}(?:\s+pir\s+${QosCar.Out.Pir})?(?:\s+cbs\s+${QosCar.Out.Cbs})?(?:\s+pbs\s+${QosCar.Out.Pbs})?(?:\s+green\s+${QosCar.Out.Green})?(?:\s+yellow\s+${QosCar.Out.Yellow})?(?:\s+red\s+${QosCar.Out.Red})\s+outbound\s*$
+      -> QosCar.Out{Cir,Pir,Cbs,Pbs,Green,Yellow,Red}
 ^ {1}qos-profile\s+${QosProfile}\s*$
 ^ {1}traffic-policy\s+${TrafficPolicy.Name}\s+${TrafficPolicy.Direction}\s*$
 ^ {1}pim\s+${Pim.Mode}\s*$
@@ -379,7 +401,7 @@ Name               type(str) reg(\S+) desc(名称) option(Key)
 Description        type(str) reg(.+) desc(描述)
 [rule]
 ^ip vpn-instance\s+${Name}\s*$
-^ {1}description\s+${Description}\s*$
+^ {0,1}description\s+${Description}\s*$
 
   # ── 地址族（子层）──────────────────────────────────
   # 现网实测：`ipv4-family` 280 次、`ipv6-family` 20 次，**都在缩进 1**，
@@ -497,7 +519,7 @@ Name        type(str) reg(\S+) desc(ACL 名)
 Description type(str) reg(.+) desc(描述)
 [rule]
 ^acl number\s+${Number}(?:\s+name\s+${Name})?\s*$
-^ {1}description\s+${Description}\s*$
+^ {0,1}description\s+${Description}\s*$
 
   # ── ACL 规则（子层）────────────────────────────────
   # ⚠️ 可选组的顺序决定成败：`${Protocol}` 用的是宽字符类，如果排在
