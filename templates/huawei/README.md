@@ -1,6 +1,6 @@
 # 华为模板（模块化目录版）
 
-入口：`main.np`（9 个 `from ... import *` 组合，`.cmdb` 后缀可省略）。
+入口：`main.np`（9 个 `from ... import *` 组合，`.np` 后缀可省略（`.cmdb` 旧文件兼容））。
 
 | 文件 | 组内容 | 字段规模 |
 |---|---|---|
@@ -31,6 +31,6 @@ netparse parse main.np device.cfg --json --fields "Interfaces=Name,Type,IpAddres
 
 - **父子捆绑**：子集合只能写在父集合所在的组文件里（数据挂载点在父记录）
 - **跨文件顶层集合同名 = 错误**（引擎 parse 期报错）
-- include 路径相对当前文件；`.cmdb` 后缀可省略
+- include 路径相对当前文件；`.np` 后缀可省略（`.cmdb` 旧文件兼容）
 - 改完跑：`netparse lint main.np --strict` → 抽样解析 → 与单文件版输出对比
 - `[__main__]` 自测试段写法范本：SELFTEST-TEMPLATE.md；完整说明：docs/__MAIN__-说明.md

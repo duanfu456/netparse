@@ -72,7 +72,7 @@ Pwd         type(secret) reg(.+)             desc(密码，输出为 ******)
 3. 多 target 用 `;` 分隔：`-> In{Cir,Pir};Out{Cir,Pir}`（一条规则同时写两个
    集合/字段组）。不要用空格或逗号——逗号已被 members/assigns 占用；
    target 成员支持引用赋值 `Out{Cir=In.Cir}`（键=捕获组路径）
-4. 模块化：文件顶部 `import x` / `from x import *|集合名`（`.cmdb` 后缀可省略）；
+4. 模块化：文件顶部 `import x` / `from x import *|集合名`（`.np` 后缀可省略，`.cmdb` 兼容）；
    输出裁剪用 `--fields 集合=字段1,字段2`（解析全量、输出按需；Key 字段自动保留）；
    路径相对当前文件；跨文件集合同名=错误；子集合不能脱离父单独 import
 5. `secret` 字段不能加 `func=`；`func=` 引用必须已定义（lint 会查）
@@ -136,9 +136,9 @@ def iface_type(value, record=None):
 4. **写 [rule]**：从配置行抄正则；每条规则跑一次 lint
 5. **验证三件套**：
    ```bash
-   netparse lint xx.cmdb --strict                       # 体检
-   netparse parse xx.cmdb 样例配置 --json | jq           # 看输出
-   netparse parse xx.cmdb 配置文件夹 out.json            # 整个文件夹批量
+   netparse lint xx.np --strict                       # 体检
+   netparse parse xx.np 样例配置 --json | jq           # 看输出
+   netparse parse xx.np 配置文件夹 out.json            # 整个文件夹批量
    python tools/_probe_conserve.py                      # 块数守恒（真机）
    ```
 6. 有 `func=` 的字段：抽样核对派生结果（编辑器右栏 JSON 直接看）

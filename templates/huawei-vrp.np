@@ -49,11 +49,13 @@ Device type(list) desc(设备)
 SysName   type(str) reg(\S+) desc(系统名) option(Key)
 Version   type(str) reg(\S+) desc(版本)
 RouterId  type(str) reg(\S+) desc(Router ID)
+MgmtIP    type(str) reg(\S+) desc(管理 IP)
 Platform  type(str) reg(\S+) desc(设备型号)
 [rule]
 ^!Software\s+Version\s+${Version}\s*$
 ^sysname\s+${SysName}\s*$
 ^router id\s+${RouterId}\s*$
+      -> Device{RouterId,MgmtIP=RouterId}
 ^[Ss]ysname\s+${SysName}\s*$
 
 # ── 接口 ──────────────────────────────────────────────

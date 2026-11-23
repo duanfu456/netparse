@@ -1,5 +1,5 @@
 # ═══ 华为 VRP 主模板（模块化入口）═══
-# 用法：netparse parse main.cmdb <配置文件> [--json]
+# 用法：netparse main.np <配置文件>（或 netparse main.np 冒烟）
 # 本文件只做组合：各功能组在子模板中，include 顺序即解析顺序。
 # 字段级裁剪用 --fields（如 --fields Interfaces=Name,Type）
 
@@ -47,8 +47,12 @@
 
 # ── 功能组引入 ──
 from 00-device import *
-from interface import *
+from 01-interfaces import *
 from 02-routes import *
+from 03-vpn import *
+from 04-bgp import *
+from 05-acl import *
+from 06-nqa import *
 from 07-static-user import *
 from 08-qos import *
 
@@ -69,7 +73,7 @@ ip route-static 10.9.0.0 255.255.0.0 NULL0
 expect = |
   Device[0].SysName = SMOKE-TEST-01
   Interfaces[0].Name = Eth-Trunk1
-  Interfaces[0].IPv4[0].Address = 10.1.1.1/24
+  Interfaces[0].IpAddress[0].Address = 10.1.1.1
 
 # 程序化用法（可选）：命令行传入配置文件时解析它
 # if cfg:

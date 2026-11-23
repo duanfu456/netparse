@@ -14,7 +14,7 @@
 # 接口行（缩进 2）与命令行（缩进 4）用 option(Key) 聚合进同一条分区记录。
 # 8 台 SR 档没有 BAS 功能 → 没有对应分区 → 集合静默不产出（正常）。
 #
-# 用法：netparse parse templates/zte-m6000.cmdb <配置文件> --json
+# 用法：netparse templates/zte-m6000.np <配置文件> --json
 # ══════════════════════════════════════════════════════════════
 
 Device type(dict) desc(设备元信息)
