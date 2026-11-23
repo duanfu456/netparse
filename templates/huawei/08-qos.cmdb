@@ -1,3 +1,6 @@
+[python_file]
+transforms_huawei.py
+
 QosProfiles type(list) start(^qos-profile\s) end(^#$) end_indent(0) desc(QoS Profile 全局定义)
 [value]
 Name type(str) reg(\S+) option(Key) desc(Profile 名)

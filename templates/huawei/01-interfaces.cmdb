@@ -2,6 +2,9 @@
 # 现网口径（318 台）：interface 块 233,666 个
 #   Eth-Trunk 系列为主（其中大量是 Eth-TrunkN.MMM 子接口），
 #   其次 GigabitEthernet / Vlanif / LoopBack / Virtual-Template
+[python_file]
+transforms_huawei.py
+
 Interfaces type(list) start(^interface\s+) end(^#$) end_indent(0) desc(接口集合)
 [value]
 Name          type(str)  reg(\S+) desc(接口名) option(Key)

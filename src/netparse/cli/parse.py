@@ -82,7 +82,27 @@ def main(args):
     if args.no_mask_heuristic:
         masking.CONFIG.heuristic = False
 
-    colls = engine.parse_template(args.template)
+    colls = engine.parse_template(args.template)   # [__main__] 段在此执行
+
+    # ── --selftest：只加载模板并执行 [__main__] 段，成功即 PASS ──
+    if getattr(args, "selftest", False):
+        if args.config:
+            sys.stderr.write("[netparse] --selftest 忽略 config 参数: %s\n"
+                             % args.config)
+        issues = engine.lint(colls)
+        errs = [x for x in issues if x[0] == "错误"]
+        for lv, coll, msg in issues:
+            sys.stderr.write("  [%s] %s: %s\n" % (lv, coll, msg))
+        if errs:
+            print("[FAIL] 模板加载/自测试失败（见上方错误，共 %d 条）" % len(errs))
+            return 1
+        print("[PASS] %s: [__main__] 自测试通过" % os.path.basename(args.template))
+        return 0
+
+    if not args.config:
+        sys.stderr.write("netparse parse: 缺少 config 参数"
+                         "（只加载/自测模板请加 --selftest）\n")
+        return 2
 
     # lint 是诊断信息：--json / 输出文件时走 stderr，保证 stdout / 文件是纯 JSON
     # （否则 `netparse parse ... --json > out.json` 出来的文件无法 json.load）

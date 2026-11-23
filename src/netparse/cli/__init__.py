@@ -31,10 +31,13 @@ def build_parser():
     # ── parse ──
     p = sub.add_parser("parse", help="按模板解析配置文件或配置文件夹")
     p.add_argument("template", help="模板路径（.cmdb）")
-    p.add_argument("config", help="配置文件或配置文件夹（文件夹=递归解析全部文件）")
+    p.add_argument("config", nargs="?", default=None,
+                   help="配置文件或配置文件夹（文件夹=递归解析全部文件）；--selftest 时可省略")
     p.add_argument("output", nargs="?", default=None,
                    help="输出 JSON 路径（可选；不指定则打印到 stdout）")
     p.add_argument("--json", action="store_true", help="输出完整 JSON（stdout 保持纯 JSON）")
+    p.add_argument("--selftest", action="store_true",
+                   help="只加载模板并执行 [__main__] 自测试段（不需要 config）")
     p.add_argument("--mask-value", default=None, help="掩码串（默认 ******）")
     p.add_argument("--no-mask-heuristic", action="store_true",
                    help="关闭 L2 密文形态兜底，只保留模板 type(secret) 的精确遮蔽")
