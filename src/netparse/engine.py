@@ -563,6 +563,12 @@ def parse_template(path):
 
     pt = _ParsedTemplate(colls, registry, load_warnings)
 
+    def _run_compat(*args, fields=None):
+        """[__main__] 注入的 run：容忍 run(colls, x) 双参习惯。
+        args: (x) 或 (colls, x)——colls 恒用引擎加载的 pt，忽略传入值。"""
+        data = args[-1] if len(args) >= 2 else (args[0] if args else [])
+        return run(data, fields=fields)
+
     # [__main__] 专用智能 run：文本/路径/行列表 自适应
     class _ResultDict(dict):
         """解析结果 dict + to_json()：[__main__] 段内 res.to_json() 直接得 JSON 文本。"""
@@ -578,29 +584,45 @@ def parse_template(path):
                 _json.dump(self, fh, ensure_ascii=False, indent=2)
             return path
 
-    def _smart_run(source, colls_or_fields=None, fields=None):
-        # 兼容两种调用习惯：
-        #   run(x)              x = 文本/路径/行列表
-        #   run(colls, x)       第一参为模板对象/集合列表（显式传 colls），
-        #                       第二参才是数据——此时忽略第一参（引擎固定用 pt）
-        if colls_or_fields is not None and not isinstance(source, str):
-            # run(colls, data) 形态：source 是模板/集合，data 在第二参数
-            source = colls_or_fields
+    def _wrap(res):
+        return _ResultDict(res)
+
+    _eng_run = globals()["run"]   # 模块级引擎 run（本地 def 会遮蔽，绕开）
+
+    def run(source, fields=None):
+        """跑解析：行列表 / 配置文本 / 单个配置文件路径（自适应）。"""
         if isinstance(source, str):
             st = source.strip()
-            # 单行且是存在的文件路径 → 读文件；否则当配置文本
-            if ("\n" not in st and " " not in st
-                    and (os.path.isabs(st)
-                         or (len(st) - st.rfind(".")) <= 5)
-                    and os.path.isfile(
-                        st if os.path.isabs(st)
-                        else os.path.join(os.path.dirname(tpath), st))):
-                full = (st if os.path.isabs(st)
-                        else os.path.join(os.path.dirname(tpath), st))
+            if ("\n" in st or " " in st or not st):
+                return _wrap(_eng_run(pt, source.splitlines(), fields=fields))
+            # 无空格无换行 → 可能是文件路径
+            full = (st if os.path.isabs(st)
+                    else os.path.join(os.path.dirname(tpath), st))
+            if os.path.isfile(full):
                 with open(full, encoding="utf-8", errors="replace") as fh:
-                    return _ResultDict(run(pt, fh.readlines(), fields=fields))
-            return _ResultDict(run(pt, source.splitlines(), fields=fields))
-        return _ResultDict(run(pt, source, fields=fields))   # 行列表直接透传
+                    return _wrap(_eng_run(pt, fh.readlines(), fields=fields))
+        return _wrap(_eng_run(pt, source, fields=fields))
+
+    def run_file(path, fields=None):
+        """跑解析：path = 配置文件路径（相对模板目录或绝对）。"""
+        full = path if os.path.isabs(path) else os.path.join(os.path.dirname(tpath), path)
+        with open(full, encoding="utf-8", errors="replace") as fh:
+            return _wrap(_eng_run(pt, fh.readlines(), fields=fields))
+
+    def run_str(text, fields=None):
+        """跑解析：text = 配置文本（多行字符串）。"""
+        return _wrap(_eng_run(pt, text.splitlines(), fields=fields))
+
+    def run_files(*paths, fields=None):
+        """跑解析：多个配置文件路径，结果按文件名合并进同一批集合。"""
+        merged = _ResultDict()
+        for pth in paths:
+            full = pth if os.path.isabs(pth) else os.path.join(os.path.dirname(tpath), pth)
+            with open(full, encoding="utf-8", errors="replace") as fh:
+                part = _eng_run(pt, fh.readlines(), fields=fields)
+            for k, v in part.items():
+                merged.setdefault(k, []).extend(v)
+        return merged
 
     # ── [__main__] 自测试段：exec 到独立命名空间（脚本模式）──
     # 注入：colls（裸列表）/ pt（模板对象，run 需要其 registry 属性）/
@@ -616,7 +638,9 @@ def parse_template(path):
             kw["file"] = _err
             return print(*a, **kw)
         ns = {"__name__": "_np_selftest_%d" % id(pt),
-              "colls": pt, "pt": pt, "run": _smart_run,
+              "colls": pt, "pt": pt,
+              "run": _run_compat, "run_file": run_file, "run_str": run_str,
+              "run_files": run_files, "run_nq": run_file,
               "print": _selftest_print,
               "engine": _sys.modules[__name__],
               "here": os.path.dirname(tpath)}
