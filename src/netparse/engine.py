@@ -327,8 +327,9 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines,
                         "%s: import 的模板不存在: %s" % (path, sub))
                 names = [x.strip() for x in names_s.split(",") if x.strip()]
                 sel = None if "*" in names else set(names)
+                _sub_main = []   # 子模板的 [__main__] 收集后丢弃（只有入口文件执行）
                 _parse_template_file(sub, colls, py_file_lines, py_blocks,
-                                     main_lines, seen_paths, imported_names,
+                                     _sub_main, seen_paths, imported_names,
                                      importing_from=sel)
                 continue
             if m_imp:
@@ -340,8 +341,9 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines,
                 if not os.path.isfile(sub):
                     raise TemplateFileError(
                         "%s: import 的模板不存在: %s" % (path, sub))
+                _sub_main = []   # 子模板的 [__main__] 收集后丢弃（只有入口文件执行）
                 _parse_template_file(sub, colls, py_file_lines, py_blocks,
-                                     main_lines, seen_paths, imported_names, None)
+                                     _sub_main, seen_paths, imported_names, None)
                 continue
 
         if low in ("[value]", "[vlaue]", "[rule]", "[python]", "[python_file]", "[__main__]"):
