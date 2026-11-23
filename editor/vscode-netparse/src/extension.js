@@ -250,8 +250,15 @@ class CmdbCodeLensProvider {
             if (t.toLowerCase() === '[__main__]') { inMain = true; mainLine = i; break; }
         }
         if (mainLine >= 0) {
-            const hasCode = doc.lineCount > mainLine + 1 &&
-                doc.lineAt(mainLine + 1).text.trim() !== '';
+            // 跳过空行向后找第一行有效代码（CRLF/空行容忍）
+            let hasCode = false;
+            for (let j = mainLine + 1; j < doc.lineCount; j++) {
+                const t2 = doc.lineAt(j).text;
+                if (t2.trim() === '') continue;
+                if (/^[A-Z]\w*\s+type\(/.test(t2.trim())) break;  // 下一集合声明 = 段结束
+                hasCode = true;
+                break;
+            }
             if (hasCode) {
                 lenses.push(new vscode.CodeLens(
                     new vscode.Range(mainLine, 0, mainLine, 12),
