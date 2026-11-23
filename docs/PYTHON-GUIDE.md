@@ -28,6 +28,22 @@ result = run(colls, lines)     # ② 执行：编译产物 + 配置行列表 →
   返回 dict，顶层 key 是集合名。每次 `run` 会复位脱敏统计并重新收集 transform 警告
   （`colls.transform_warnings`）
 
+### 常用扩展参数
+
+```python
+# 字段白名单（解析全量、输出按需；Key 字段自动保留）
+result = run(colls, lines, fields={"Interfaces": {"Name", "Type"}, "RouteStatics": None})
+
+# 模板加载即自动执行 [__main__] 段（失败抛 TemplateFileError）
+colls.selftest          # 段元数据（None = 模板无该段）
+```
+
+### 模块化模板
+
+`main.cmdb` 内 `from 01-interfaces import *` 组合子模板（`.cmdb` 后缀可省略）；
+`parse_template("templates/huawei/main.cmdb")` 加载入口即可，
+引用路径相对当前文件、循环引用/同名集合会在加载期报错。
+
 **批量场景必须只编译一次**（编译开销远大于执行）：
 
 ```python

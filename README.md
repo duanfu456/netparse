@@ -5,6 +5,10 @@
 
 零运行时第三方依赖，只用 Python 标准库。
 
+## 📚 文档地图
+
+全部文档索引见 **[docs/README.md](docs/README.md)**（模板手册 / 速查 / CLI / Python API / 自测试专篇）。
+
 ## 安装
 
 ```bash

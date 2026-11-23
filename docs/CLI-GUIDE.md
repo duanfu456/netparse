@@ -7,6 +7,8 @@
 ```bash
 netparse parse templates/huawei-vrp.cmdb device.cfg            # 解析：集合树 + 条数
 netparse parse templates/huawei-vrp.cmdb device.cfg --json     # 完整 JSON（stdout 纯 JSON）
+netparse parse templates/huawei-vrp.cmdb device.cfg --json --fields "Interfaces=Name,Type"
+netparse parse templates/huawei/main.cmdb --selftest           # 只加载模板跑 [__main__] 冒烟
 netparse lint  templates/huawei-vrp.cmdb                       # 模板体检
 netparse lint  templates/huawei-vrp.cmdb --strict              # 有警告也非零退出（CI 用）
 netparse diff --sample 200                                     # 与生产台账 19 列对比（需只读语料）
@@ -31,6 +33,8 @@ netparse parse <模板路径> <配置文件 或 配置文件夹> [输出路径] 
 | `--json` | stdout 输出完整 JSON（与 output 二选一） |
 | `--mask-value <串>` | 自定义掩码串（默认 `******`） |
 | `--no-mask-heuristic` | 关闭密文形态兜底，只保留模板 `type(secret)` 的精确遮蔽 |
+| `--selftest` | **只加载模板并执行 `[__main__]` 自测试段**，不需要 config；输出 `[PASS]/[FAIL]`，退出码 0/1 |
+| `--fields "集合=字段1,字段2;..."` | 输出字段白名单（解析全量、输出按需；Key 字段自动保留；引用不存在集合名报错并列出可用集合） |
 
 **四种用法**：
 
