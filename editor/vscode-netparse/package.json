@@ -1,11 +1,13 @@
 {
   "name": "netparse-cmdb",
   "displayName": "netparse CMDB Template",
-  "description": "netparse .cmdb 模板语法高亮与编辑支持（集合/段头/规则/字段引用/target 着色）",
-  "version": "0.1.0",
+  "description": "netparse .cmdb 模板语法高亮、自动补全与 lint 实时诊断",
+  "version": "0.2.0",
   "publisher": "netparse",
   "engines": { "vscode": "^1.60.0" },
   "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:cmdb"],
+  "main": "./src/extension.js",
   "contributes": {
     "languages": [
       {
@@ -21,6 +23,16 @@
         "scopeName": "source.cmdb",
         "path": "./syntaxes/cmdb.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "netparse CMDB",
+      "properties": {
+        "netparse.lintPath": {
+          "type": "string",
+          "default": "netparse",
+          "description": "netparse 可执行文件路径（用于实时 lint 诊断）"
+        }
+      }
+    }
   }
 }
