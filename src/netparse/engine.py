@@ -303,7 +303,7 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines,
         st = s.strip()
         if not st:
             flush_pending()
-            if mode not in ("rule", "python", "python_file"):
+            if mode not in ("rule", "python", "python_file", "__main__"):
                 mode = None
                 field_stack = []
             base_indent = None

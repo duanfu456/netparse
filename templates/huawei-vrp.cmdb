@@ -652,10 +652,15 @@ Out type(dict) desc(出方向限速；无方向行 = 从 In 复制（out_* trans
 # user-queue 行（块内与 car 并列，收进 In 视图的 Uq 字段）
 ^ {1}user-queue\s+cir\s+${In.UqCir}\s+pir\s+${In.UqPir}\s+${In.UqDir}\s*$
       -> In{UqCir,UqPir,UqDir}
+
 # ── 自测试段（引擎加载本模板时自动执行；失败 = 模板或样例写错）──
 [__main__]
 netparse = r"D:/tools/netparse.exe"
-cfgstr = """
+
+
+def main(colls, run):
+    """冒烟测试：设备名/接口 Type/IP 地址/路由 NULL0 归属。"""
+    cfgstr = """
 sysname SMOKE-TEST-01
 #
 interface Eth-Trunk1
@@ -665,13 +670,18 @@ interface Eth-Trunk1
 ip route-static 10.9.0.0 255.255.0.0 NULL0
 #
 """
-res = run(colls, cfgstr.splitlines())
-assert res["Device"][0]["SysName"] == "SMOKE-TEST-01"
-itf = res["Interfaces"][0]
-assert itf["Name"] == "Eth-Trunk1"
-assert itf["Type"] == "链路聚合"
-assert itf["IpAddress"][0]["Address"] == "10.1.1.1"
-rt = res["RouteStatics"][0]
-assert rt["Prefix"] == "10.9.0.0"
-assert rt["NextHopIface"] == "NULL0"
-print("[__main__] 冒烟通过: 接口/路由/设备名 全部命中")
+    res = run(colls, cfgstr.splitlines())
+    assert res["Device"][0]["SysName"] == "SMOKE-TEST-01"
+    itf = res["Interfaces"][0]
+    assert itf["Name"] == "Eth-Trunk1"
+    assert itf["Type"] == "链路聚合"
+    assert itf["IpAddress"][0]["Address"] == "10.1.1.1"
+    rt = res["RouteStatics"][0]
+    assert rt["Prefix"] == "10.9.0.0"
+    assert rt["NextHopIface"] == "NULL0"
+    return "冒烟通过: 设备/接口/路由 全部命中"
+
+
+# 引擎约定：段内有 main() 就调用它；返回文本即 PASS 输出
+_result = main(colls, run)
+print("[__main__]", _result)

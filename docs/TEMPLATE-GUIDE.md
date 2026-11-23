@@ -1271,7 +1271,11 @@ templates/huawei/
 # ── 自测试段（引擎加载本模板时自动执行）──
 [__main__]
 netparse = r"D:/tools/netparse.exe"     ← 可选；不写用 PATH 里的
-cfgstr = """
+
+
+def main(colls, run):
+    # 冒烟测试：设备名/接口 Type/IP 地址/路由 NULL0 归属
+    cfgstr = """
 sysname SMOKE-TEST-01
 #
 interface Eth-Trunk1
@@ -1281,11 +1285,15 @@ interface Eth-Trunk1
 ip route-static 10.9.0.0 255.255.0.0 NULL0
 #
 """
-res = run(colls, cfgstr.splitlines())
-assert res["Device"][0]["SysName"] == "SMOKE-TEST-01"
-assert res["Interfaces"][0]["Type"] == "链路聚合"
-assert res["RouteStatics"][0]["NextHopIface"] == "NULL0"
-print("[__main__] 冒烟通过")
+    res = run(colls, cfgstr.splitlines())
+    assert res["Device"][0]["SysName"] == "SMOKE-TEST-01"
+    assert res["Interfaces"][0]["Type"] == "链路聚合"
+    assert res["RouteStatics"][0]["NextHopIface"] == "NULL0"
+    return "冒烟通过: 设备/接口/路由 全部命中"
+
+
+_result = main(colls, run)                ← 引擎约定：有 main() 就调用它
+print("[__main__]", _result)
 ```
 
 **注入对象**：
@@ -1299,6 +1307,9 @@ print("[__main__] 冒烟通过")
 
 **行为规则**：
 
+0. 推荐函数式写法：`def main(colls, run):` 定义冒烟逻辑，段尾
+   `_result = main(colls, run)` 调用——像 Python 的 `if __name__ == "__main__"`
+   守卫；直接平铺语句也可以（引擎从上到下执行）
 1. 段内代码在**模板加载时执行一次**——parse/lint/exe 全部触发
 2. 无异常 = 模板自测通过；**任何异常（含 assert 失败）→ 显式报错
    `[__main__] 自测试失败: ...`**，解析不进行
