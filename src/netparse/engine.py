@@ -240,7 +240,7 @@ def is_coll_decl(toks):
     return toks[1].startswith("type(")
 
 
-def _parse_template_file(path, colls, py_file_lines, py_blocks,
+def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines,
                          seen_paths, imported_names, importing_from=None):
     """解析单个模板文件（include/import 的递归工作体）。
 
@@ -328,7 +328,7 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks,
                 names = [x.strip() for x in names_s.split(",") if x.strip()]
                 sel = None if "*" in names else set(names)
                 _parse_template_file(sub, colls, py_file_lines, py_blocks,
-                                     seen_paths, imported_names,
+                                     main_lines, seen_paths, imported_names,
                                      importing_from=sel)
                 continue
             if m_imp:
@@ -341,10 +341,10 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks,
                     raise TemplateFileError(
                         "%s: import 的模板不存在: %s" % (path, sub))
                 _parse_template_file(sub, colls, py_file_lines, py_blocks,
-                                     seen_paths, imported_names, None)
+                                     main_lines, seen_paths, imported_names, None)
                 continue
 
-        if low in ("[value]", "[vlaue]", "[rule]", "[python]", "[python_file]"):
+        if low in ("[value]", "[vlaue]", "[rule]", "[python]", "[python_file]", "[__main__]"):
             flush_pending()
             if low == "[python]":
                 if cur_py:
@@ -361,6 +361,12 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks,
             if cur_py:
                 py_blocks.append("\n".join(cur_py))
                 cur_py = None
+            if low == "[__main__]":
+                mode = "__main__"
+                section_coll = cur
+                base_indent = None
+                field_stack = []
+                continue
             mode = "value" if low != "[rule]" else "rule"
             section_coll = cur
             base_indent = None
@@ -391,6 +397,14 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks,
                 mode = None
             else:
                 py_file_lines.append(s)
+                continue
+        if mode == "__main__":
+            # 顶格集合声明行结束该段（与 python_file 同规则）
+            if re.match(r"^[A-Z]\w*\s+type\(", s):
+                mode = None
+                # 落到下方段外分支正常处理集合声明
+            else:
+                main_lines.append(s)
                 continue
 
         indent = len(s) - len(s.lstrip())
@@ -501,9 +515,10 @@ def parse_template(path):
     colls = []
     py_file_lines = []   # [python_file] 段的路径行（声明顺序）
     py_blocks = []       # [python] 段代码块（物理顺序，处理时统一按出现顺序执行）
+    main_lines = []      # [__main__] 自测试段代码行
     seen_paths = {"on_stack": set(), "done": set()}
     imported_names = {}
-    _parse_template_file(path, colls, py_file_lines, py_blocks,
+    _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines,
                          seen_paths, imported_names, None)
     tpath = os.path.abspath(path)
 
@@ -546,16 +561,50 @@ def parse_template(path):
         if not sym.startswith("__") and callable(inline_ns[sym]):
             registry[sym] = inline_ns[sym]
 
-    return _ParsedTemplate(colls, registry, load_warnings)
+    pt = _ParsedTemplate(colls, registry, load_warnings)
+
+    # ── [__main__] 自测试段：exec 到独立命名空间（脚本模式）──
+    # 注入：colls（裸列表）/ pt（模板对象，run 需要其 registry 属性）/
+    #       run（引擎解析入口）/ here（模板目录）
+    # 用户脚本从上到下执行；无异常 = 模板加载即自测通过
+    if main_lines:
+        code = "\n".join(main_lines)
+        import io as _io
+        _err = _sys.stderr
+        def _selftest_print(*a, **k):
+            # [__main__] 段的 print 一律走 stderr——stdout 属于解析 JSON 输出
+            kw = dict(k)
+            kw["file"] = _err
+            return print(*a, **kw)
+        ns = {"__name__": "_np_selftest_%d" % id(pt),
+              "colls": pt, "pt": pt, "run": run,
+              "print": _selftest_print,
+              "engine": _sys.modules[__name__],
+              "here": os.path.dirname(tpath)}
+        # key= 行是合法 Python 赋值，直接 exec；整段在模板加载期执行一次
+        try:
+            exec(compile(code, "<%s [__main__]>" % (path,), "exec"), ns)
+        except SyntaxError as e:
+            raise TemplateFileError(
+                "%s: [__main__] 段语法错误: %s" % (path, e)) from None
+        except Exception as e:
+            # 段内运行期异常（用户脚本里的 assert / IO 等）——加载期不吞：
+            # 显式抛出，让调用方（CLI/exe）看到真实的测试失败
+            raise TemplateFileError(
+                "%s: [__main__] 自测试失败: %s: %s"
+                % (path, type(e).__name__, e)) from None
+
+    return pt
 
 
 class _ParsedTemplate(list):
     """parse_template 的返回值：兼容 list（历史用法），额外携带 transform 注册表。"""
 
-    def __init__(self, colls, registry, warnings):
+    def __init__(self, colls, registry, warnings, selftest=None):
         super().__init__(colls)
         self.registry = registry
         self.transform_warnings = warnings
+        self.selftest = selftest
 
 
 class TemplateFileError(Exception):

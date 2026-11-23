@@ -56,3 +56,27 @@ from 06-nqa import *
 from 07-static-user import *
 from 08-qos import *
 
+
+# ── 自测试段（引擎加载本模板时自动执行；失败 = 模板或样例写错）──
+[__main__]
+netparse = r"D:/tools/netparse.exe"
+cfgstr = """
+sysname SMOKE-TEST-01
+#
+interface Eth-Trunk1
+ description smoke-test
+ ip address 10.1.1.1 255.255.255.0
+#
+ip route-static 10.9.0.0 255.255.0.0 NULL0
+#
+"""
+res = run(colls, cfgstr.splitlines())
+assert res["Device"][0]["SysName"] == "SMOKE-TEST-01"
+itf = res["Interfaces"][0]
+assert itf["Name"] == "Eth-Trunk1"
+assert itf["Type"] == "链路聚合"
+assert itf["IpAddress"][0]["Address"] == "10.1.1.1"
+rt = res["RouteStatics"][0]
+assert rt["Prefix"] == "10.9.0.0"
+assert rt["NextHopIface"] == "NULL0"
+print("[__main__] 冒烟通过: 接口/路由/设备名 全部命中")
