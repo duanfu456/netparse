@@ -563,6 +563,24 @@ def parse_template(path):
 
     pt = _ParsedTemplate(colls, registry, load_warnings)
 
+    # [__main__] 专用智能 run：文本/路径/行列表 自适应
+    def _smart_run(source, fields=None):
+        if isinstance(source, str):
+            st = source.strip()
+            # 单行且是存在的文件路径 → 读文件；否则当配置文本
+            if ("\n" not in st and " " not in st
+                    and (os.path.isabs(st)
+                         or (len(st) - st.rfind(".")) <= 5)
+                    and os.path.isfile(
+                        st if os.path.isabs(st)
+                        else os.path.join(os.path.dirname(tpath), st))):
+                full = (st if os.path.isabs(st)
+                        else os.path.join(os.path.dirname(tpath), st))
+                with open(full, encoding="utf-8", errors="replace") as fh:
+                    return run(pt, fh.readlines(), fields=fields)
+            return run(pt, source.splitlines(), fields=fields)
+        return run(pt, source, fields=fields)   # 行列表直接透传
+
     # ── [__main__] 自测试段：exec 到独立命名空间（脚本模式）──
     # 注入：colls（裸列表）/ pt（模板对象，run 需要其 registry 属性）/
     #       run（引擎解析入口）/ here（模板目录）
@@ -577,7 +595,7 @@ def parse_template(path):
             kw["file"] = _err
             return print(*a, **kw)
         ns = {"__name__": "_np_selftest_%d" % id(pt),
-              "colls": pt, "pt": pt, "run": run,
+              "colls": pt, "pt": pt, "run": _smart_run,
               "print": _selftest_print,
               "engine": _sys.modules[__name__],
               "here": os.path.dirname(tpath)}

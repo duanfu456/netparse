@@ -1285,7 +1285,7 @@ interface Eth-Trunk1
 ip route-static 10.9.0.0 255.255.0.0 NULL0
 #
 """
-    res = run(colls, cfgstr.splitlines())
+    res = run(cfgstr)                       ← run 自适应：文本/路径/行列表
     assert res["Device"][0]["SysName"] == "SMOKE-TEST-01"
     assert res["Interfaces"][0]["Type"] == "链路聚合"
     assert res["RouteStatics"][0]["NextHopIface"] == "NULL0"
@@ -1301,7 +1301,7 @@ print("[__main__]", _result)
 | 注入名 | 内容 |
 |---|---|
 | `colls` | 解析好的模板对象（import 进来的组也在里面） |
-| `run(lines)` | 引擎解析入口，`run(colls, lines)` 返回结果 dict |
+| `run(x)` | 引擎解析入口；x 可为配置文本 / 配置文件路径 / 行列表（自适应） |
 | `here` | 模板所在目录 |
 | `print` | **重定向到 stderr**（stdout 属于 `--json` 管道，不会被污染） |
 

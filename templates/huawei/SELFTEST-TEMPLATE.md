@@ -24,7 +24,7 @@ interface Eth-Trunk1
 ip route-static 10.9.0.0 255.255.0.0 NULL0
 #
 """
-    res = run(colls, cfgstr.splitlines())
+    res = run(cfgstr)                       ← run 自适应：文本/路径/行列表
 
     assert res["Device"][0]["SysName"] == "SMOKE-TEST-01"
     itf = res["Interfaces"][0]
@@ -50,7 +50,7 @@ cfgstr = """
 sysname SMOKE-TEST-01
 #
 """
-res = run(colls, cfgstr.splitlines())
+res = run(cfgstr)
 assert res["Device"][0]["SysName"] == "SMOKE-TEST-01"
 print("[__main__] 冒烟通过")
 ```
@@ -60,8 +60,7 @@ print("[__main__] 冒烟通过")
 ```cmdb
 [__main__]
 cfgpath = "smoke-sample.cfg"                ← 相对模板目录（here 可拼绝对路径）
-with open(cfgpath, encoding="utf-8") as f:
-    res = run(colls, f.readlines())
+res = run(cfgpath)                          ← 直接传路径，引擎自动读取
 assert len(res["Interfaces"]) > 0
 print("[__main__] 外部样例通过:", len(res["Interfaces"]), "接口")
 ```
@@ -74,5 +73,6 @@ print("[__main__] 外部样例通过:", len(res["Interfaces"]), "接口")
    再下标；拿不准就先跑一遍把 JSON 打出来对照
 3. **Windows 路径用 `r"D:/..."` 原始串**或正斜杠（`\t` 会转义成制表符）
 4. `print` 走 stderr——不影响 `--json` 的 stdout 管道
-5. 改完模板保存即自动执行（exe/CLI/VSCode 插件全部触发）；
+5. `run()` 输入自适应：传配置文本、传文件路径、传行列表都行
+6. 改完模板保存即自动执行（exe/CLI/VSCode 插件全部触发）；
    失败信息里带异常类型与消息，直接定位写错的规则或断言

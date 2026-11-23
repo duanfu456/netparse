@@ -74,7 +74,7 @@ interface Eth-Trunk1
 ip route-static 10.9.0.0 255.255.0.0 NULL0
 #
 """
-    res = run(colls, cfgstr.splitlines())
+    res = run(cfgstr)
     assert res["Device"][0]["SysName"] == "SMOKE-TEST-01"
     itf = res["Interfaces"][0]
     assert itf["Name"] == "Eth-Trunk1"
@@ -86,6 +86,5 @@ ip route-static 10.9.0.0 255.255.0.0 NULL0
     return "冒烟通过: 设备/接口/路由 全部命中"
 
 
-# 引擎约定：段内有 main() 就调用它；返回文本即 PASS 输出
 _result = main(colls, run)
 print("[__main__]", _result)
