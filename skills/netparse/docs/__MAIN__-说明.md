@@ -20,7 +20,24 @@
 
 ## 二、怎么写
 
-### 形态 1：def main(colls, run)（推荐，逻辑多时）
+### 形态 0：expect= 声明式断言（★ 推荐，4 行起步覆盖 80% 场景）
+
+```cmdb
+[__main__]
+cfgstr = """
+sysname SMOKE-TEST-01
+#
+"""
+expect = |
+  Device[0].SysName = SMOKE-TEST-01
+  Interfaces.count > 0
+```
+
+一行一条断言（`集合[索引].字段 = 期望值`），失败报 `期望 X, 实际 Y`。
+支持 `[索引]` 多级 / `.count` / `> < >= <=` 比较。
+复杂断言用 `def check(res):` 逃生门（expect 全过后执行）。
+
+### 形态 1：def main(colls, run)（逻辑多时）
 
 ```text
 [__main__]

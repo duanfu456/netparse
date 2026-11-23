@@ -10,6 +10,21 @@
 | [PYTHON-GUIDE.md](PYTHON-GUIDE.md) | Python API：两步模型、fields 白名单、模块化加载、脱敏控制 | 嵌入自己的脚本 |
 | [FINAL-plan.md](FINAL-plan.md) | 总方案：架构 / 语义 / CMDB 建模 / 版本演进记录 | 了解设计背景 |
 
+## 目录结构（整理后）
+
+| 目录 | 内容 |
+|---|---|
+| `src/netparse/` | 引擎本体（engine / cli / masking） |
+| `templates/` | `.np` 模板（华为模块化 9 组 + main 入口 + 单文件版 / 中兴 / 诺基亚） |
+| `tools/` | 活跃工具：`batch_real.py`（真机批量回归）、`_probe_conserve.py`（守恒探针）、`diff_incumbent.py`、`readonly_guard.py`、`masking.py`、`probe_stack.py`（原型 CLI） |
+| `tools/probes-archive/` | 评估期一次性探针（14 个，已归档不再维护） |
+| `tools/legacy/` | 早期实现存档 |
+| `editor/vscode-netparse/` | VSCode 插件源码（vsce package 打 vsix） |
+| `skills/netparse/` | skill 包（SKILL.md + docs + exe） |
+| `tests/` | 回归 + 单测（fixtures 双基线） |
+| `docs/` | 本文档目录 |
+| `packaging/` | PyInstaller 打包（entry.py + netparse.spec） |
+
 ## 模板资产
 
 | 位置 | 内容 |

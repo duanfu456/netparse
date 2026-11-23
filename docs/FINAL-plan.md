@@ -19,8 +19,19 @@
   累计接口 146,915 / 路由 5,216 / VPN 2,493 / 静态用户 3,555 / QoS 748；
   模板自测试 `[__main__]` 段（段内完整 Python，注入 colls/run/here，
   **模板加载时自动执行**，失败显式报错；print 重定向 stderr 保 JSON 管道纯净）；
-  VSCode 插件 editor/vscode-netparse（v0.3.0：语法高亮/自动补全/lint 实时
-  诊断/定义跳转/[__main__] CodeLens 运行自测试，vsix 已装本机） |
+  VSCode 插件 editor/vscode-netparse（v0.4.4：语法高亮/自动补全/lint 实时
+  诊断/定义跳转/[__main__] CodeLens 运行自测试 + snippet 全注释示例，
+  vsix 已装本机） |
+| v7 解释器模式 | CLI 重设计：`netparse main.np` 直接执行模板（对标 python），
+  `-m lint/diff/all` 功能形态，旧子命令直通；[__main__] 能力升级——
+  **expect= 声明式断言**（`路径.字段 = 期望值` 一行一条，失败报期望 vs 实际，
+  支持 `[索引]` 多级 / `.count` / `> < >= <=` 比较）+ `check()` 逃生门 +
+  `summary()` 摘要 + `sys/cfg/argv/exit` 注入 + `-m all` 全目录自测；
+  模板后缀统一 `.cmdb` → `.np`（双后缀兼容零破坏）；run() API 拆分
+  run/run_str/run_file/run_files（返回 _ResultDict 带 to_json/save）；
+  子模板 [__main__] 隔离（main 加载不再执行子模块段）；插件 v0.4.4
+  snippet（[__main__] 整段带出，高级用法默认注释）；批量回归修复
+  （main.np 误删 import 恢复 9 组 + 单文件版补 MgmtIP 链路） |
 | v5（2026-11-21） | **transform 机制落地**：字段级 `func=` + `[python]`/`[python_file]` 双段（相对模板路径，自包含分发）；签名 `def f(value, record=None)`；双执行路径（捕获值 / commit 派生补算）；lint 五条新检查；华为模板接入 `iface_type`——接口类型 0% → **100%**（21,427 接口）。另：编辑器（高亮/补全/折叠/试运行/保存守门）、CLI 尾部放宽自动补齐。详见 `TEMPLATE-GUIDE.md` 场景 16 与 `.devforge/spec/changes/transform-func/design.md` |
 | v4（2026-11-20） | 按纯缩进模型重写华为模板（接口块内覆盖率 30.8% → **100%**）；引擎新增 `indent(n)` / `end_indent(n)`（均 opt-in）；修 6 个 bug（5 引擎 + 1 模板侧）；去掉 7 处 `default` 造假。详见 `TEMPLATE-GUIDE.md` 第 8 节 |
 | v3 | 修正 12 处文档与现状不符；澄清「作用域与文件排版无关」；确定真实交付物与覆盖边界；补与现成方案的对比；路线重排为三批次 + 两个决定性实验 |
