@@ -33,3 +33,4 @@ netparse parse main.cmdb device.cfg --json --fields "Interfaces=Name,Type,IpAddr
 - **跨文件顶层集合同名 = 错误**（引擎 parse 期报错）
 - include 路径相对当前文件；`.cmdb` 后缀可省略
 - 改完跑：`netparse lint main.cmdb --strict` → 抽样解析 → 与单文件版输出对比
+- `[__main__]` 自测试段写法范本：SELFTEST-TEMPLATE.md；完整说明：docs/__MAIN__-说明.md
