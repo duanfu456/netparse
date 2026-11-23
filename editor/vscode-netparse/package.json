@@ -1,0 +1,26 @@
+{
+  "name": "netparse-cmdb",
+  "displayName": "netparse CMDB Template",
+  "description": "netparse .cmdb 模板语法高亮与编辑支持（集合/段头/规则/字段引用/target 着色）",
+  "version": "0.1.0",
+  "publisher": "netparse",
+  "engines": { "vscode": "^1.60.0" },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "cmdb",
+        "aliases": ["netparse CMDB", "cmdb"],
+        "extensions": [".cmdb"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "cmdb",
+        "scopeName": "source.cmdb",
+        "path": "./syntaxes/cmdb.tmLanguage.json"
+      }
+    ]
+  }
+}
