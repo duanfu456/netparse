@@ -110,6 +110,16 @@ netparse lint <模板路径> [--json] [--strict]
 - **Key 字段自动保留**（记录身份不能丢，如路由的 Prefix/Mask/NextHop）
 - 未指定 --fields → 全量输出（默认行为不变）
 
+## 模板自测试（[__main__]）
+
+模板尾部可写 `[__main__]` 段（完整 Python，`run(colls, lines)` + assert），
+**模板加载时自动执行**——parse/lint/exe 全部触发，失败显式报错。
+详细的注入对象与行为规则见 TEMPLATE-GUIDE 场景 19。
+
+直接验证：
+
+    netparse parse templates/huawei-vrp.cmdb --json    # 加载即跑冒烟
+
 ## 模块化模板
 
 入口模板用 `import` / `from ... import *|集合名` 组合子模板（语法见

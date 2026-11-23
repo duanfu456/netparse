@@ -157,6 +157,8 @@ tests/                 单元测试与 fixture 回归
 | 限速单位换算 | QosProfiles Cir/Pir→M、Cbs/Pbs→MB（kbps_to_m / bytes_to_mb transform） |
 | 字段白名单 | `--fields "Interfaces=Name,Type,IpAddress"`（解析全量、输出按需；Key 字段自动保留；引用不存在集合名报错并列出可用集合） |
 | 真机批量回归 | `tools/batch_real.py`：模块化 vs 单文件输出逐一致校验（234 份 BRAS 真机 100% 一致） |
+| 模板自测试 | 模板尾部 `[__main__]` 段写完整 Python（`run(colls, cfg.splitlines())` + assert），**模板加载时自动执行**；失败显式报错——"改模板必看测试"固化为机制 |
+| VSCode 插件 | `editor/vscode-netparse/`：.cmdb 语法高亮 + 自动补全 + lint 实时诊断 + 定义跳转 + `[__main__]` CodeLens 运行自测试（`vsce package` 打 .vsix 安装） |
 | 编辑器 | 本地 Web（`python editor/server.py`）：lint 实时检查、`${` 字段补全、集合折叠、选中试运行、保存守门 |
 | 台账 19 列 | 8/19 完整对齐，其余列的模板规则已补，**台账口径复测未跑** |
 

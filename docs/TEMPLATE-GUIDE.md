@@ -1258,3 +1258,56 @@ templates/huawei/
 
 **实战验证**：`templates/huawei/main.cmdb`（9 组，`.cmdb` 后缀可省略）与单文件 `huawei-vrp.cmdb`
 对同一配置的输出**逐字节一致**。
+
+
+### 场景 19 · 模板自测试段（`[__main__]`）
+
+模板尾部写完整 Python 代码——**模板加载时自动执行一遍**，失败显式报错。
+"改模板必看测试"从靠自觉变成机制强制。
+
+**语法**：
+
+```text
+# ── 自测试段（引擎加载本模板时自动执行）──
+[__main__]
+netparse = r"D:/tools/netparse.exe"     ← 可选；不写用 PATH 里的
+cfgstr = """
+sysname SMOKE-TEST-01
+#
+interface Eth-Trunk1
+ description smoke
+ ip address 10.1.1.1 255.255.255.0
+#
+ip route-static 10.9.0.0 255.255.0.0 NULL0
+#
+"""
+res = run(colls, cfgstr.splitlines())
+assert res["Device"][0]["SysName"] == "SMOKE-TEST-01"
+assert res["Interfaces"][0]["Type"] == "链路聚合"
+assert res["RouteStatics"][0]["NextHopIface"] == "NULL0"
+print("[__main__] 冒烟通过")
+```
+
+**注入对象**：
+
+| 注入名 | 内容 |
+|---|---|
+| `colls` | 解析好的模板对象（import 进来的组也在里面） |
+| `run(lines)` | 引擎解析入口，`run(colls, lines)` 返回结果 dict |
+| `here` | 模板所在目录 |
+| `print` | **重定向到 stderr**（stdout 属于 `--json` 管道，不会被污染） |
+
+**行为规则**：
+
+1. 段内代码在**模板加载时执行一次**——parse/lint/exe 全部触发
+2. 无异常 = 模板自测通过；**任何异常（含 assert 失败）→ 显式报错
+   `[__main__] 自测试失败: ...`**，解析不进行
+3. `netparse=` 行只是声明（记录路径），第一期 `--selftest` 进程内执行
+   不用它；留给插件 CodeLens 第二期
+4. 段定界：顶格集合声明行结束该段（与 `[python_file]` 同规则）
+
+**模块化交互**：`main.cmdb` 与各子模板都可带自己的 `[__main__]`；
+加载哪个文件就执行谁的段——单组调试时只跑本组冒烟。
+
+**实战**：华为单文件版与 `huawei/main.cmdb` 尾部各带冒烟段
+（设备名/接口 Type/IpAddress/路由 NULL0 断言），每次加载自动验证。
