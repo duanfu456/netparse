@@ -305,12 +305,12 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines, main
         st = s.strip()
         if not st:
             flush_pending()
-            if mode not in ("rule", "python", "python_file", "__main__"):
+            if mode not in ("rule", "python", "python_file", "__main__", "__test__"):
                 mode = None
                 field_stack = []
             base_indent = None
             continue
-        if st.startswith("#"):
+        if st.startswith("#") and mode not in ("python", "__main__", "__test__"):
             continue
         low = st.lower()
 
