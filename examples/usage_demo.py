@@ -36,8 +36,8 @@ result = run(colls, config_text)
 print("1B 字符串解析:", json.dumps(dict(result), ensure_ascii=False))
 
 # 方式 C：真机配置文件
-result = run(colls, "设备配置.txt")   # 传文件路径也可以（自动识别）
-# 注意：字符串 vs 文件路径的区分是引擎自动判断的——路径存在则按文件读
+result = run(colls, "设备配置.txt")   # 文件路径直接传（v0.9.1 起自动识别）
+# 输入归一化：字符串→按行拆；存在的路径→自动读文件；列表→原样
 
 # ══════════════════════════════════════════════════════════
 # 2. syslog 日志解析（CMDRECORD 操作指令提取）

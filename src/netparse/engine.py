@@ -1335,6 +1335,18 @@ def run(colls, lines, trace=None, fields=None):
     registry = getattr(colls, "registry", {})
     _RUNTIME_WARN_SEEN.clear()
     tw = []
+
+    # ── 输入归一化（2026-11-24）：字符串 / 文件路径直接可用 ──
+    # · str 含换行 → 按行拆（多行配置文本）
+    # · str 是存在的文件路径 → 自动读文件（utf-8，容错替换）
+    # · list/tuple → 原样（行列表）
+    if isinstance(lines, str):
+        import os as _os
+        if _os.path.isfile(lines):
+            with open(lines, encoding="utf-8", errors="replace") as _f:
+                lines = _f.read().splitlines()
+        else:
+            lines = lines.splitlines()
     colls.transform_warnings = tw
     ctx = {"registry": registry, "tw": tw}
     root = Coll("__root__", {}, set(), -1, None)
