@@ -303,7 +303,7 @@ async function exportSelftestJson() {
 }
 
 async function runTestSection(uri, id) {
-    const bin = enginePath();
+    const bin = getExecPath();
     if (!outChannel) outChannel = vscode.window.createOutputChannel('netparse');
     outChannel.show(true);
     const cwd = path.dirname(uri.fsPath);
