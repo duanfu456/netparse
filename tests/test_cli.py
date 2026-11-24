@@ -115,7 +115,7 @@ check("tools/probe_stack.py --lint 参数被翻译成 lint 子命令",
 # shim 的模块级全局必须代理到 CONFIG，否则 test_masking 那类赋值会静默失效
 probe = subprocess.run(
     [sys.executable, "-c",
-     "import sys; sys.path.insert(0, 'tools');"
+     "import sys; sys.path.insert(0, 'tools/probes-archive');"
      "import probe_stack as P;"
      "import netparse;"
      "P.MASK_HEURISTIC = False;"
