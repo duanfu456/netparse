@@ -71,6 +71,23 @@ def build_parser():
                    help="字段白名单（输出层裁剪）：集合=字段1,字段2；多组用 ; 分隔"
                         "（例：Interfaces=Name,Type,IpAddress;RouteStatics=Prefix,Mask,NextHop；"
                         "集合名单独出现=保留全部字段；Key 字段自动保留）")
+    p.add_argument("--glob", default=None,
+                   help="文件通配符（覆盖 config 语义）：相对/绝对均可，** 递归"
+                        "（例：--glob \"E:/logs/**/*.log\"）")
+    p.add_argument("--pattern", default="*.log",
+                   help="config 为目录时的文件匹配模式（默认 *.log）")
+    p.add_argument("--recursive", action="store_true",
+                   help="config 为目录时递归子目录")
+    p.add_argument("--encoding", default="utf-8",
+                   help="配置文件读取编码（默认 utf-8；老设备 GBK 用 --encoding gbk）")
+    p.add_argument("--where", default=None,
+                   help="记录级过滤：字段 条件值 或 字段 contains 子串"
+                        "（例：--where \"Command contains ospf\"；"
+                        "精确匹配用 --where \"Status=up\"）")
+    p.add_argument("--stats", action="store_true",
+                   help="stderr 输出统计摘要（行数/记录数/过滤数/耗时）")
+    p.add_argument("--csv", default=None,
+                   help="额外输出一份 CSV（第一个 list 型集合 → 表格；配合 --where 筛选）")
 
     # ── lint ──
     p = sub.add_parser("lint", help="模板体检（不解析配置）")

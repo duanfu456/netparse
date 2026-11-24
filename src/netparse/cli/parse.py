@@ -58,6 +58,38 @@ def _parse_fields(spec):
     return out or None
 
 
+def _parse_where(spec):
+    """解析 --where 字符串 → run() 的 where 形态（简写：字段 → 条件）。
+
+    支持两种写法（首个空格分词）：
+      "Field contains xxx"  → {"Field": "contains:xxx"}
+      "Field=value"         → {"Field": "value"}（精确匹配）
+    """
+    if not spec:
+        return None
+    spec = spec.strip()
+    if "=" in spec and " contains " not in spec:
+        fld, _, val = spec.partition("=")
+        return {fld.strip(): val.strip()}
+    parts = spec.split(None, 2)
+    if len(parts) == 3 and parts[1].lower() == "contains":
+        return {parts[0]: "contains:" + parts[2]}
+    raise SystemExit("错误：--where 语法应为 '字段 contains 子串' 或 '字段=精确值'，收到: %r" % spec)
+
+
+def _write_csv(res, out_csv):
+    """第一个 list 型集合 → CSV（utf-8-sig，Excel 直接打开）。"""
+    import csv
+    for k, arr in res.items():
+        if isinstance(arr, list) and arr and isinstance(arr[0], dict):
+            with open(out_csv, "w", newline="", encoding="utf-8-sig") as f:
+                w = csv.DictWriter(f, fieldnames=list(arr[0].keys()))
+                w.writeheader()
+                w.writerows(arr)
+            return k
+    raise SystemExit("错误：--csv 需要至少一个非空 list 型集合")
+
+
 def _collect_config_files(config):
     """config 参数展开：文件 → [自身]；文件夹 → 递归全部文件（按路径排序）。"""
     if os.path.isfile(config):
@@ -114,6 +146,43 @@ def main(args):
         print("[PASS] %s: [__main__] 自测试通过" % os.path.basename(args.template))
         return 0
 
+    # ── --glob：多文件通配批量（run_files：目录/通配/递归/编码/过滤/CSV 一站式）──
+    if getattr(args, "glob", None):
+        import time as _time
+        _t0 = _time.perf_counter()
+        _where = _parse_where(getattr(args, "where", None))
+        if _where:
+            known = {f.path for c in colls for f in c.all_fields.values()}
+            for _wf in _where:
+                if _wf not in known and not any(_wf in k or k.startswith(_wf + ".") for k in known):
+                    sys.stderr.write("[警告] --where 字段 %r 不在模板字段清单中"
+                                     "（可能过滤出 0 条）\n" % _wf)
+        b = engine.run_files(colls, args.glob,
+                             encoding=getattr(args, "encoding", "utf-8"),
+                             on_error="skip", provenance="file",
+                             fields=_parse_fields(getattr(args, "fields", None)),
+                             where=_parse_where(getattr(args, "where", None)))
+        sys.stderr.write("[mask] L1=%d L2=%d\n"
+                         % (masking.STATS.l1_hits, masking.STATS.l2_hits))
+        if getattr(args, "stats", False):
+            st = dict(b.stats)
+            sys.stderr.write("[stats] files=%d ok=%d records=%d elapsed=%ss\n"
+                             % (st.get("files", 0), st.get("files_ok", 0),
+                                st.get("records", 0), st.get("elapsed", 0)))
+        if args.csv:
+            cname = _write_csv(b.records, args.csv)
+            sys.stderr.write("[csv] %s → %s\n" % (cname, args.csv))
+        out_path = args.output or args.config   # --glob 时 output 可落在 config 位置
+        if out_path:
+            os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+            with open(out_path, "w", encoding="utf-8") as fh:
+                json.dump(dict(b.records), fh, ensure_ascii=False, indent=2)
+            print("批量解析完成（--glob）→ %s" % out_path)
+        else:
+            print(json.dumps(dict(b.records), ensure_ascii=False, indent=2))
+        return 0
+
+
     if not args.config:
         sys.stderr.write("netparse parse: 缺少 config 参数"
                          "（只加载/自测模板请加 --selftest）\n")
@@ -142,10 +211,12 @@ def main(args):
         for fp in files:
             rel = os.path.relpath(fp, root)
             try:
-                with open(fp, encoding="utf-8", errors="replace") as f:
+                with open(fp, encoding=getattr(args, "encoding", "utf-8"),
+                          errors="replace") as f:
                     lines = f.readlines()
                 res = engine.run(colls, lines,
-                                 fields=_parse_fields(getattr(args, "fields", None)))
+                                 fields=_parse_fields(getattr(args, "fields", None)),
+                                 where=_parse_where(getattr(args, "where", None)))
                 # 相对路径映射到输出目录（保留子目录结构），扩展名换成 .json
                 out_file = os.path.join(out_dir, os.path.splitext(rel)[0] + ".json")
                 os.makedirs(os.path.dirname(os.path.abspath(out_file)), exist_ok=True)
@@ -166,14 +237,27 @@ def main(args):
         return 0 if not failures else 1
 
     # ── 单文件模式 ──
-    with open(args.config, encoding="utf-8", errors="replace") as f:
+    with open(args.config, encoding=getattr(args, "encoding", "utf-8"),
+              errors="replace") as f:
         lines = f.readlines()
-    res = engine.run(colls, lines, fields=_parse_fields(getattr(args, "fields", None)))
+    import time as _time
+    _t0 = _time.perf_counter()
+    res = engine.run(colls, lines, fields=_parse_fields(getattr(args, "fields", None)),
+                     where=_parse_where(getattr(args, "where", None)))
+    _elapsed = _time.perf_counter() - _t0
 
     # 脱敏统计写 stderr：stdout 留给 JSON / 文本输出，不污染
     sys.stderr.write("[mask] L1=%d L2=%d mask=%r heuristic=%s\n"
                      % (masking.STATS.l1_hits, masking.STATS.l2_hits,
                         masking.CONFIG.value, masking.CONFIG.heuristic))
+    if getattr(args, "stats", False):
+        rec_n = {k: len(v) for k, v in res.items() if isinstance(v, list)}
+        sys.stderr.write("[stats] lines=%d records=%s elapsed=%.2fs\n"
+                         % (len(lines), rec_n, _elapsed))
+
+    if getattr(args, "csv", None):
+        cname = _write_csv(res, args.csv)
+        sys.stderr.write("[csv] %s → %s\n" % (cname, args.csv))
 
     if args.output:
         os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)

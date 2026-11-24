@@ -28,7 +28,7 @@
   支持 `[索引]` 多级 / `.count` / `> < >= <=` 比较）+ `check()` 逃生门 +
   `summary()` 摘要 + `sys/cfg/argv/exit` 注入 + `-m all` 全目录自测；
   模板后缀统一 `.cmdb` → `.np`（双后缀兼容零破坏）；run() API 拆分
-  run/run_str/run_file/run_files（返回 _ResultDict 带 to_json/save）；
+  run/run_str/run_file/run_files（run_files 返回 BatchResult：records/stats/errors）；
   子模板 [__main__] 隔离（main 加载不再执行子模块段）；插件 v0.4.4
   snippet（[__main__] 整段带出，高级用法默认注释）；批量回归修复
   （main.np 误删 import 恢复 9 组 + 单文件版补 MgmtIP 链路） |

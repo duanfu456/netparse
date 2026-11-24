@@ -76,7 +76,7 @@ from .paths import (
     templates_dir,
 )
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 __all__ = [
     # 引擎主流程

@@ -706,7 +706,7 @@ def parse_template(path, *, main_cfg=None, main_argv=None, skip_main=False, test
         ns = {"__name__": "_np_selftest_%d" % id(pt),
               "colls": pt, "pt": pt,
               "run": _run_compat, "run_file": run_file, "run_str": run_str,
-              "run_files": run_files, "run_nq": run_file,
+              "run_files": run_files, "run_nq": run_file,  # deprecated 别名（0.11 起移除）
               "print": _selftest_print,
               "engine": _sys.modules[__name__],
               "here": os.path.dirname(tpath),
@@ -1358,8 +1358,8 @@ def run_str(colls, text, *, trace=None, fields=None, where=None, stats=False):
 
     text: 多行配置/日志文本，内部按行拆。
     """
-    return run(colls, text.splitlines(), trace=trace, fields=fields,
-               where=where, stats=stats)
+    return run(colls, [ln.rstrip("\r") for ln in text.splitlines()],
+               trace=trace, fields=fields, where=where, stats=stats)
 
 
 def run_file(colls, path, *, encoding="utf-8", trace=None, fields=None,
@@ -1477,6 +1477,8 @@ def run_files(colls, *paths, pattern="*.log", recursive=False,
     for done, pth in enumerate(files, 1):
         if progress:
             progress(done, total, pth)
+        elif done % 10 == 0 or done == total:
+            _sys.stderr.write("[netparse] %d/%d %s\n" % (done, total, os.path.basename(pth)))
         try:
             with open(pth, encoding=encoding, errors="replace") as fh:
                 part = run(colls, fh.read().splitlines(), fields=fields,
