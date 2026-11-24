@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "netparse"
-version = "0.3.0"
+version = "0.7.0"
 description = "网络设备配置解析器：模板 DSL + 嵌套状态栈，把华为/中兴/Nokia 配置解析成结构化 JSON"
 readme = "README.md"
 requires-python = ">=3.9"
