@@ -2,7 +2,7 @@
   "name": "netparse-cmdb",
   "displayName": "netparse CMDB Template",
   "description": "netparse .cmdb 模板语法高亮、自动补全与 lint 实时诊断",
-  "version": "0.4.9",
+  "version": "0.4.11",
   "publisher": "netparse",
   "engines": {
     "vscode": "^1.60.0"
@@ -59,6 +59,10 @@
       {
         "command": "netparse.exportSelftestJson",
         "title": "netparse: 导出上次自测试的完整 JSON"
+      },
+      {
+        "command": "netparse.runTestSection",
+        "title": "netparse: 运行指定测试段"
       }
     ],
     "snippets": [

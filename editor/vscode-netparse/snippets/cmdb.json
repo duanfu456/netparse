@@ -1,6 +1,10 @@
 {
   "netparse __main__ 自测试段（完整示例）": {
-    "prefix": ["__main__", "main", "selftest"],
+    "prefix": [
+      "__main__",
+      "main",
+      "selftest"
+    ],
     "body": [
       "[__main__]",
       "# ── 冒烟测试：cfgstr 样例 → expect 断言 → PASS/FAIL ──",
@@ -46,11 +50,27 @@
     "description": "netparse [__main__] 自测试段：cfgstr 样例 + expect 断言 + 全部高级用法注释示例"
   },
   "netparse expect= 断言块": {
-    "prefix": ["expect"],
+    "prefix": [
+      "expect"
+    ],
     "body": [
       "expect = |",
       "  \\${1:Device}[0].\\${2:Field} = \\${3:期望值}"
     ],
     "description": "expect= 声明式断言块"
+  },
+  "__test__": {
+    "prefix": "__test__",
+    "body": [
+      "[__test__.${1:01}]",
+      "# title: ${2:测试名}",
+      "cfgstr = \"\"\"",
+      "${3:sysname SMOKE-01}",
+      "#",
+      "\"\"\"",
+      "expect = |",
+      "  ${4:Device[0].SysName = SMOKE-01}"
+    ],
+    "description": "netparse 独立测试段（cfgstr 样例 + expect 断言）"
   }
 }
