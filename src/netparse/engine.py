@@ -30,6 +30,8 @@
     netparse parse <模板> <配置文件> [--json] [--lint]
 """
 import os
+import fnmatch
+
 import re
 import sys as _sys
 import types as _types
@@ -996,7 +998,11 @@ def compile_rule(rule, coll):
     # 两种写法并存，作者按命令形态自选；$ 是作者的原生锚定语法，引擎不改写。
     # 宽规则务必排在精确规则之后（lint 会对前缀抢位告警）。
 
-    return CompiledRule(re.compile(pattern), group_paths, path_groups, rule.target)
+    try:
+        _rc = re.compile(pattern)
+    except re.error as _e:
+        raise type(_e)("%s | 完整pattern: %r" % (_e, pattern))
+    return CompiledRule(_rc, group_paths, path_groups, rule.target)
 
 
 # ── 值处理 ────────────────────────────────────────────
@@ -1269,9 +1275,13 @@ def derive_funcs(rec, coll, registry, tw, coll_name):
     规则：只有当函数**返回非 None** 才写入（函数自己决定缺依据时返回 None）。
     """
     for fld in coll.all_fields.values():
-        if fld.func is None or fld.type == "list":
+        if fld.func is None:
             continue
-        if get_path(rec, fld.path) is not None:
+        # 2026-11-24：list/dict 字段的 func 在此执行（commit 时，洋葱外层）——
+        # value 传当前完整值（list[dict] / dict），函数返回 None=字段留空，
+        # 返回 list[dict]/dict=整体替换；类型不符保留原值+告警（见下方校验）。
+        # 普通字段维持"无值才派生"语义（有值的字段已在写入时执行过 func）。
+        if fld.type not in ("list", "dict") and get_path(rec, fld.path) is not None:
             continue
         fn = registry.get(fld.func)
         if fn is None:
@@ -1279,8 +1289,9 @@ def derive_funcs(rec, coll, registry, tw, coll_name):
         segs = fld.path.split(".")
         if len(segs) > 1 and get_path(rec, ".".join(segs[:-1])) is None:
             continue                     # 父对象不存在 → 不凭空产出
+        cur = get_path(rec, fld.path)
         try:
-            out = fn(None, rec)
+            out = fn(cur, rec)
         except Exception as e:
             key = (fld.path, "%s: %s" % (type(e).__name__, e))
             if key not in _RUNTIME_WARN_SEEN:
@@ -1289,7 +1300,35 @@ def derive_funcs(rec, coll, registry, tw, coll_name):
                           % (coll_name, fld.path, fld.func,
                              type(e).__name__, e))
             continue
-        if out is not None:
+        if out is None:
+            # None = 该字段清空（用户语义：'返回 None 就代表这个东西是空的'）
+            if fld.type in ("list", "dict"):
+                if fld.path in rec:
+                    del rec[fld.path]
+            continue
+        # ── 类型契约（2026-11-24）：list func 必须 list[dict]；dict func 必须 dict ──
+        # 违约 → 保留原值 + 记警告（容错优先，不炸解析）。[] 合法（过滤后为空）。
+        if fld.type == "list":
+            if not (isinstance(out, list) and all(isinstance(x, dict) for x in out)):
+                key = (fld.path, "type-contract")
+                if key not in _RUNTIME_WARN_SEEN:
+                    _RUNTIME_WARN_SEEN.add(key)
+                    tw.append("[transform] %s.%s: 函数 %s 返回 %s——type(list) 字段"
+                              "要求 list[dict]（保留原值）"
+                              % (coll_name, fld.path, fld.func, type(out).__name__))
+                continue
+            set_path(rec, segs, out)
+        elif fld.type == "dict":
+            if not isinstance(out, dict):
+                key = (fld.path, "type-contract")
+                if key not in _RUNTIME_WARN_SEEN:
+                    _RUNTIME_WARN_SEEN.add(key)
+                    tw.append("[transform] %s.%s: 函数 %s 返回 %s——type(dict) 字段"
+                              "要求 dict（保留原值）"
+                              % (coll_name, fld.path, fld.func, type(out).__name__))
+                continue
+            set_path(rec, segs, out)
+        else:
             set_path(rec, segs, out)
 
 
@@ -1314,7 +1353,161 @@ def apply_defaults(rec, coll):
         set_path(rec, segs, convert(val, fld))
 
 
-def run(colls, lines, trace=None, fields=None):
+def run_str(colls, text, *, trace=None, fields=None, where=None, stats=False):
+    """解析多行字符串（显式形态：不探测路径）。
+
+    text: 多行配置/日志文本，内部按行拆。
+    """
+    return run(colls, text.splitlines(), trace=trace, fields=fields,
+               where=where, stats=stats)
+
+
+def run_file(colls, path, *, encoding="utf-8", trace=None, fields=None,
+             where=None, stats=False):
+    """解析单个文件（显式形态：路径不存在立刻报错）。
+
+    path: 文件路径。
+    """
+    with open(path, encoding=encoding, errors="replace") as fh:
+        return run(colls, fh.read().splitlines(), trace=trace, fields=fields,
+                   where=where, stats=stats)
+
+
+def _expand_paths(paths, pattern="*", recursive=False):
+    """展开 paths：文件/目录/通配符三形态 → 确定性的文件路径列表。
+
+    每个元素分派：
+      ① os.path.isfile → 直接收
+      ② os.path.isdir → 按 pattern 扫描（recursive 决定是否下钻子目录）
+      ③ 含 *?[ → glob.glob(recursive=True) 展开（空匹配：警告 + 跳过）
+      ④ 其余 → FileNotFoundError
+    全部结果 sorted 保证顺序确定性。
+    """
+    import glob as _glob
+    out = []
+    for p in paths:
+        if os.path.isfile(p):
+            out.append(p)
+        elif os.path.isdir(p):
+            if recursive:
+                for root, _dirs, names in os.walk(p):
+                    for n in sorted(names):
+                        if fnmatch.fnmatch(n, pattern):
+                            out.append(os.path.join(root, n))
+            else:
+                for n in sorted(os.listdir(p)):
+                    full = os.path.join(p, n)
+                    if os.path.isfile(full) and fnmatch.fnmatch(n, pattern):
+                        out.append(full)
+        elif any(ch in p for ch in "*?["):
+            hits = sorted(_glob.glob(p, recursive=True))
+            if not hits:
+                _sys.stderr.write("[netparse] 无匹配文件: %s\n" % p)
+            out.extend(hits)
+        else:
+            raise FileNotFoundError(p)
+    # 去重保序
+    seen = set()
+    uniq = []
+    for x in out:
+        ax = os.path.abspath(x)
+        if ax not in seen:
+            seen.add(ax)
+            uniq.append(x)
+    return uniq
+
+
+class BatchResult:
+    """run_files 的返回值：records 可像 dict 一样用，另带统计。"""
+
+    def __init__(self, records, files_ok, errors, stats):
+        self.records = records
+        self.files_ok = files_ok
+        self.errors = errors
+        self.stats = stats
+
+    def __getitem__(self, key):
+        return self.records[key]
+
+    def __iter__(self):
+        return iter(self.records)
+
+    def keys(self):
+        return self.records.keys()
+
+    def items(self):
+        return self.records.items()
+
+    def __repr__(self):
+        return "BatchResult(files=%d, records=%s, errors=%d)" % (
+            self.stats.get("files", 0), dict(self.records), len(self.errors))
+
+
+def run_files(colls, *paths, pattern="*.log", recursive=False,
+              encoding="utf-8", on_error="skip", provenance="file",
+              progress=None, fields=None, where=None):
+    """多文件批量解析。
+
+    paths: 文件路径 / 目录 / 通配符串（任意混传，见 _expand_paths）
+    pattern: 目录扫描时的匹配模式（默认 *.log）
+    recursive: 目录扫描是否下钻子目录
+    encoding: 逐文件读取编码
+    on_error: "skip"（默认，警告后继续）/ "raise"（第一个错误抛出）
+              / "collect"（收集到 BatchResult.errors）
+    provenance: "file"（默认，每条记录注入 _file=文件名，全部合并）
+                / "group"（{文件路径: 结果dict} 按文件分组）
+    progress: callback(done, total, path) 可选
+    fields: 透传 run 的输出白名单
+    """
+    import time as _time
+    t0 = _time.perf_counter()
+    files = _expand_paths(paths, pattern=pattern, recursive=recursive)
+    total = len(files)
+    merged = OrderedDict()
+    grouped = {}
+    files_ok = []
+    errors = []
+    n_records = 0
+
+    def _inject(rec, path):
+        rec = dict(rec)
+        rec["_file"] = os.path.basename(path)
+        return rec
+
+    for done, pth in enumerate(files, 1):
+        if progress:
+            progress(done, total, pth)
+        try:
+            with open(pth, encoding=encoding, errors="replace") as fh:
+                part = run(colls, fh.read().splitlines(), fields=fields,
+                           where=where)
+        except Exception as e:
+            if on_error == "raise":
+                raise
+            errors.append((pth, "%s: %s" % (type(e).__name__, e)))
+            if on_error == "skip":
+                _sys.stderr.write("[netparse] 跳过 %s: %s\n" % (pth, e))
+            continue
+        files_ok.append(pth)
+        if provenance == "group":
+            grouped[pth] = part
+        else:
+            for k, v in part.items():
+                if provenance == "file":
+                    v = [_inject(rec, pth) for rec in v]
+                merged.setdefault(k, []).extend(v)
+                n_records += len(v)
+
+    stats = {"files": total, "files_ok": len(files_ok),
+             "records": n_records, "elapsed": round(_time.perf_counter() - t0, 3)}
+    if provenance == "group":
+        return BatchResult(grouped, files_ok, errors, stats)
+    return BatchResult(merged, files_ok, errors, stats)
+
+
+
+
+def run(colls, lines, *, trace=None, fields=None, encoding="utf-8", where=None, stats=False):
     """trace: 可选列表，传入后记录每一行的匹配情况 (行号, 原始行, 命中集合名或 None)。
 
     这是 lint「命令覆盖率」统计的数据来源——必须来自真实匹配过程，
@@ -1324,6 +1517,22 @@ def run(colls, lines, trace=None, fields=None):
 
     transform 警告收集在 colls.transform_warnings（每次 run 覆盖）。
 
+    encoding: lines 为文件路径时的读取编码（默认 utf-8）。
+      注意：本函数不识别路径——请用 run_file / run_files 传路径，
+      或调用方自行 open。此处 encoding 供 run_file/run_files 内部透传。
+
+    where: 可选记录级过滤 {集合名: {字段: 判定}}。
+      判定值三种形态：
+        · str/int 等 → 精确相等（str 时大小写敏感）
+        · callable(v) → 返回 True 保留
+        · 带 "contains:" 前缀的 str → 子串包含
+      过滤发生在解析完成后、返回前（不影响匹配/脱敏/统计）。
+      多字段条件 AND；多集合各自独立过滤。
+
+    stats: True 时返回 (结果, 统计dict) 二元组。
+      统计 = {"lines": 输入行数, "records": {集合名: 条数},
+              "elapsed": 秒, "filtered": {集合名: 过滤掉条数}}
+
     fields: 可选字段白名单（输出层裁剪，解析始终全量）。
       形态 1  dict: {"Interfaces": {"Name","Type","IpAddress"}, "Bgp": None}
               值 None/空集合 = 保留该集合全部字段
@@ -1331,22 +1540,14 @@ def run(colls, lines, trace=None, fields=None):
       语义：未列出的集合 → 整个不输出；列出的集合未列字段 → 裁掉；
             Key 字段自动保留（记录身份不能丢）。
     """
+    import time as _time
+    _t0 = _time.perf_counter()
     STATS.reset()
     registry = getattr(colls, "registry", {})
     _RUNTIME_WARN_SEEN.clear()
     tw = []
 
-    # ── 输入归一化（2026-11-24）：字符串 / 文件路径直接可用 ──
-    # · str 含换行 → 按行拆（多行配置文本）
-    # · str 是存在的文件路径 → 自动读文件（utf-8，容错替换）
-    # · list/tuple → 原样（行列表）
-    if isinstance(lines, str):
-        import os as _os
-        if _os.path.isfile(lines):
-            with open(lines, encoding="utf-8", errors="replace") as _f:
-                lines = _f.read().splitlines()
-        else:
-            lines = lines.splitlines()
+
     colls.transform_warnings = tw
     ctx = {"registry": registry, "tw": tw}
     root = Coll("__root__", {}, set(), -1, None)
@@ -1540,6 +1741,46 @@ def run(colls, lines, trace=None, fields=None):
     # 顶层集合没有父元素，重名对象（如 Nokia 不同 router 下的同名接口）必须各留一条。
     if fields:
         return _filter_fields(results, fields, coll_by_name)
+    # ── where 记录级过滤（解析后、返回前）──
+    filtered_out = {}
+    if where:
+        # 兼容两种形态：{集合名: {字段: 条件}}（严格）与
+        # {字段: 条件}（简写——应用到全部集合）。
+        # 判据：顶层键是已知集合名 → 严格形态。
+        known = set(results.keys())
+        if any(k in known for k in where):
+            per_coll = where
+        else:
+            per_coll = {cname: where for cname in known}
+        for cname, conds in per_coll.items():
+            recs = results.get(cname)
+            if recs is None:
+                continue
+            kept = []
+            for rec in recs:
+                ok = True
+                for fld, cond in conds.items():
+                    v = rec.get(fld)
+                    if callable(cond):
+                        ok = bool(cond(v))
+                    elif isinstance(cond, str) and cond.startswith("contains:"):
+                        ok = cond[len("contains:"):] in (v or "")
+                    else:
+                        ok = (v == cond)
+                    if not ok:
+                        break
+                if ok:
+                    kept.append(rec)
+            filtered_out[cname] = len(recs) - len(kept)
+            results[cname] = kept
+
+    if stats:
+        import time as _time
+        info = {"lines": len(lines),
+                "records": {k: len(v) for k, v in results.items()},
+                "elapsed": round(_time.perf_counter() - _t0, 3),
+                "filtered": filtered_out}
+        return results, info
     return results
 
 

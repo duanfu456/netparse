@@ -9,7 +9,7 @@ import json
 # ══════════════════════════════════════════════════════════
 # 0. 导入
 # ══════════════════════════════════════════════════════════
-from netparse import parse_template, run
+from netparse import parse_template, run, run_str, run_file, run_files
 
 # parse_template(模板路径)   → 加载模板（返回模板对象 colls）
 # run(colls, 行列表或字符串) → 真正执行解析（返回 OrderedDict 结果）
@@ -36,8 +36,8 @@ result = run(colls, config_text)
 print("1B 字符串解析:", json.dumps(dict(result), ensure_ascii=False))
 
 # 方式 C：真机配置文件
-result = run(colls, "设备配置.txt")   # 文件路径直接传（v0.9.1 起自动识别）
-# 输入归一化：字符串→按行拆；存在的路径→自动读文件；列表→原样
+# result = run_file(colls, "设备配置.txt")   # 单文件（显式形态，路径需存在）
+# run: 行列表；run_str: 多行文本；run_file: 单文件；run_files: 多文件/目录/通配
 
 # ══════════════════════════════════════════════════════════
 # 2. syslog 日志解析（CMDRECORD 操作指令提取）
@@ -98,3 +98,19 @@ trace = []
 result = run(colls, ["sysname X"], trace=trace)
 print("5 trace:", trace)
 print("5 trace:", trace)
+
+
+# ══════════════════════════════════════════════════════════
+# 6. 多文件批量（run_files：目录 / 通配符 / 精确路径混传）
+# ══════════════════════════════════════════════════════════
+from netparse import run_files
+
+LOG_ROOT = r"E:\项目管理\陕西移动\其他工作\000-日志分析\宝鸡SR-设备日志"
+b = run_files(syslog_colls, LOG_ROOT,        # 目录（递归扫 *.log）
+              pattern="*.log", recursive=True,  # 递归子目录
+              on_error="skip",                 # 坏文件跳过
+              provenance="file")               # 每条记录注入 _file 来源
+print("6 批量:", b.stats)                      # {"files": N, "records": M, ...}
+print("   首条 _file:", b["Commands"][0]["_file"])
+for err in b.errors:
+    print("   错误:", err)

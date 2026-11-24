@@ -51,6 +51,10 @@ from .engine import (
     parse_target,
     parse_template,
     run,
+    run_str,
+    run_file,
+    run_files,
+    BatchResult,
     set_path,
     split_tokens,
 )
@@ -76,7 +80,8 @@ __version__ = "0.9.0"
 
 __all__ = [
     # 引擎主流程
-    "parse_template", "run", "lint", "compile_rule",
+    "parse_template", "run", "run_str", "run_file", "run_files",
+    "BatchResult", "lint", "compile_rule",
     # 模型
     "Field", "Coll", "Rule", "CompiledRule", "Frame",
     # 文法工具

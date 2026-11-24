@@ -10,33 +10,87 @@ pip install .        # 仓库根目录执行；之后 import netparse 即可
 
 ```python
 from netparse import parse_template, run       # 核心两步
+from netparse import run_str, run_file, run_files   # 显式输入形态（可选）
 from netparse import masking                   # 脱敏控制（可选）
 ```
 
 不安装也可以：把仓库的 `src/` 加进 `sys.path`，或直接 `python -m netparse ...`。
 
-## 核心 API：两步模型
+## 核心 API：两步模型 + 四个显式执行函数
 
 ```python
-colls = parse_template(path)   # ① 编译：.cmdb 文本 → 集合树/正则（一次）
-result = run(colls, lines)     # ② 执行：编译产物 + 配置行列表 → dict（可无限复用）
+colls = parse_template(path)   # ① 编译：.cmdb/.np 文本 → 集合树/正则（一次）
+result = run(colls, lines)     # ② 执行：编译产物 + 行列表 → dict（可无限复用）
 ```
 
 - `parse_template(path)`：`path` 任意目录、相对/绝对均可。返回对象兼容 `list`
   （可迭代集合），并携带 `.registry`（transform 注册表）
-- `run(colls, lines)`：`lines` 是**行列表**（`str.splitlines()` 或 `f.readlines()` 均可）。
+- `run(colls, lines)`：`lines` 是**行列表**（严格形态）。
   返回 dict，顶层 key 是集合名。每次 `run` 会复位脱敏统计并重新收集 transform 警告
   （`colls.transform_warnings`）
 
-### 常用扩展参数
+### 输入形态：四个显式函数（推荐生产代码使用）
+
+| 函数 | 输入 | 说明 |
+|---|---|---|
+| `run(colls, lines)` | 行列表 | 严格形态 |
+| `run_str(colls, text)` | 多行字符串 | 内部自动 splitlines |
+| `run_file(colls, path, encoding=)` | 单文件路径 | 路径不存在立刻报错 |
+| `run_files(colls, *paths, ...)` | 多文件/目录/通配符 | 批量，见下节 |
+
+`run_str / run_file / run_files` 是**显式声明**——调用处的意图写在函数名里，
+不存在"字符串是路径还是内容"的歧义。
+
+### run 的扩展参数
 
 ```python
 # 字段白名单（解析全量、输出按需；Key 字段自动保留）
 result = run(colls, lines, fields={"Interfaces": {"Name", "Type"}, "RouteStatics": None})
 
+# 记录级过滤（解析后、返回前；不动引擎匹配逻辑）
+# 条件值三形态：精确值 / "contains:子串" / callable(v)->bool
+result = run(colls, lines, where={"Command": "contains:ospf"})          # 简写：应用到全部集合
+result = run(colls, lines, where={"Commands": {"Command": "contains:ospf"}})  # 严格：集合→字段→条件
+result = run(colls, lines, where={"Command": lambda v: v and v.startswith("display")})
+
+# 统计摘要（返回 (结果, info) 二元组）
+result, info = run(colls, lines, stats=True)
+# info = {"lines": 行数, "records": {集合名: 条数}, "elapsed": 秒, "filtered": {集合名: 过滤掉条数}}
+
 # 模板加载即自动执行 [__main__] 段（失败抛 TemplateFileError）
 colls.selftest          # 段元数据（None = 模板无该段）
 ```
+
+### run_files：多文件批量（目录/通配符/混传）
+
+```python
+from netparse import run_files
+
+# 三种来源形态可任意混传：
+b = run_files(colls, "a.log", "b.log")                    # ① 精确文件
+b = run_files(colls, r"E:\logs\宝鸡PSR1")                # ② 目录（扫 pattern="*.log"）
+b = run_files(colls, r"E:\logs", recursive=True)          # ③ 目录递归
+b = run_files(colls, r"E:\logs\\**\\*.log")               # ④ 通配符串（** 递归）
+b = run_files(colls, "a.log", r"E:\logs", r"E:\logs\\**\\*.log") # 混传（自动去重）
+
+b = run_files(colls, r"E:\logs", recursive=True,
+              encoding="utf-8",          # 逐文件读取编码
+              on_error="skip",           # skip / raise / collect
+              provenance="file",         # file=合并+每条注入 _file / group=按文件分组
+              progress=lambda d, t, p: print(f"{d}/{t} {p}"),
+              fields={"Commands": None})
+
+b.stats        # {"files": 142, "files_ok": 140, "records": 230146, "elapsed": 37.2}
+b.files_ok     # 成功文件列表
+b.errors       # [(路径, 异常摘要)]（on_error="collect" 时非空）
+b["Commands"]  # 合并后的记录（每条含 _file=来源文件名）
+```
+
+说明：
+- 结果 `sorted` 保证确定性——同样输入永远同样解析顺序（CSV 行序可复现）
+- 通配空匹配：警告 + 跳过（不炸批量任务）；目录既不存在也不通配 → `FileNotFoundError`
+- 性能参考：142 文件 / 523 万行 / 230146 条记录 → 串行 37 秒（26 万行/s）。
+  并发实测无收益（GIL），故不提供并发参数
 
 ### 模块化模板
 
@@ -148,6 +202,38 @@ for c in colls:
 ```
 
 可用于自研工具：字段清单导出、模板覆盖率报表、编辑器集成等。
+
+## func 挂在 list/dict 字段（洋葱时序 + 类型契约）
+
+transform 的执行时序由内向外（洋葱模型）：
+
+1. **子字段 func**（如 `Ifs.IfName ... func=f`）：每次写入即触发，
+   `f(value, record)`，value=捕获值
+2. **dict 字段 func**（`Sub type(dict) func=f`）：commit 时触发一次，
+   `f(当前完整dict, record)` → 返回 dict=整体替换 / None=字段清空
+3. **list 字段 func**（`Ifs type(list) func=f`）：commit 时触发一次，
+   `f(当前完整list[dict], record)` → 返回 list[dict]=整表替换（可过滤/排序/去重）
+   / None=字段清空；`[]` 合法（清空）
+
+```python
+def filter_down(value, record=None):
+    # 挂在 Ifs type(list) 上：value 是完整元素列表，元素字段已被内层 func 处理完
+    return [x for x in value if x.get("Status") != "down"]
+```
+
+**类型契约**（违约 → 保留原值 + transform 警告，不炸解析）：
+
+- list func 返回必须 `list[dict]`（`[]` 合法）；dict func 返回必须 `dict`
+- None 永远合法 = 字段清空（list/dict）/ 留空（普通字段）
+
+## 输入形态与函数速查
+
+| 函数 | 输入 | 典型用途 |
+|---|---|---|
+| `run(colls, lines)` | 行列表 | 已有行数据 |
+| `run_str(colls, text)` | 多行字符串 | SSH 回显粘贴 |
+| `run_file(colls, path, encoding=)` | 单文件 | 常规解析 |
+| `run_files(colls, *paths, pattern=, recursive=, on_error=, provenance=, progress=, fields=, where=)` | 文件/目录/通配混传 | 批量 → `BatchResult` |
 
 ## 错误处理速查
 

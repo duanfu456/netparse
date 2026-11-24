@@ -26,14 +26,24 @@ PYTHONPATH=src python -m netparse --help
 ### 作为库
 
 ```python
-from netparse import parse_template, run
+from netparse import parse_template, run_file
 
 colls = parse_template("templates/huawei-vrp.np")
-with open("device.cfg", encoding="utf-8") as f:
-    result = run(colls, f.readlines())
+result = run_file(colls, "device.cfg")     # run=行列表 / run_str=文本 / run_file=单文件
 
 for itf in result["Interfaces"]:
     print(itf["Name"], itf.get("Description", ""))
+```
+
+多文件批量（目录/通配符/递归，每条记录带 `_file` 来源标记）：
+
+```python
+from netparse import run_files
+
+b = run_files(colls, r"E:\logs", recursive=True)   # 或传通配符串 "E:\\logs\\**\\*.log"
+print(b.stats)          # {"files": 142, "records": 230146, "elapsed": 37.2, ...}
+for rec in b["Commands"]:
+    print(rec["_file"], rec["Command"])
 ```
 
 只要凭据脱敏、不要形态兜底：

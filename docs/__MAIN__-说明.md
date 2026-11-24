@@ -165,3 +165,15 @@ expect = |
 - 每个测试段自带 cfgstr + expect，完全自包含
 - `netparse X.np` 不执行测试段（无残留）；`-t` 跑全部；`-t 01,03` 跑指定
 - 插件 CodeLens：每个测试段头有「▶ 运行测试 NN」
+
+
+## [__main__] 内可用的 run_* 函数
+
+| 函数 | 输入 | 说明 |
+|---|---|---|
+| `run(source)` | 行列表/文本/路径（自适应） | 快捷方式 |
+| `run_str(text)` | 多行文本 | 显式声明 |
+| `run_file(path)` | 单文件路径 | 显式声明 |
+| `run_files(*paths)` | 文件/目录/通配混传 | 批量（`pattern=`/`recursive=` 可选）|
+
+模块级（Python 代码里）同名函数同语义：`from netparse import run, run_str, run_file, run_files`。
