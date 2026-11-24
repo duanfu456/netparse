@@ -199,8 +199,8 @@ def main(args):
 
 
 def main_lint(args):
-    """`netparse lint <模板>`"""
-    colls = engine.parse_template(args.template)
+    """`netparse lint <模板>`——纯体检：加载收集但不执行 [__main__] 段（无副作用）"""
+    colls = engine.parse_template(args.template, skip_main=True)
     issues = engine.lint(colls)
     _print_lint(issues, args.json)
 

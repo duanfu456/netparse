@@ -528,7 +528,7 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines, main
     return merged_names
 
 
-def parse_template(path, *, main_cfg=None, main_argv=None):
+def parse_template(path, *, main_cfg=None, main_argv=None, skip_main=False):
     # main_cfg/main_argv：CLI 解释器模式透传给 [__main__] 段的 cfg/argv
     colls = []
     py_file_lines = []   # [python_file] 段的路径行（声明顺序）
@@ -645,10 +645,12 @@ def parse_template(path, *, main_cfg=None, main_argv=None):
         return merged
 
     # ── [__main__] 自测试段：exec 到独立命名空间（脚本模式）──
+    # skip_main=True（lint 路径）：只收集不执行——lint 不该有副作用
+    # （段内 res.save() / print 等在"只体检"场景必须跳过）
     # 注入：colls（裸列表）/ pt（模板对象，run 需要其 registry 属性）/
     #       run（引擎解析入口）/ here（模板目录）
     # 用户脚本从上到下执行；无异常 = 模板加载即自测通过
-    if main_lines:
+    if main_lines and not skip_main:
         code = "\n".join(main_lines)
         import io as _io
         _err = _sys.stderr
