@@ -855,18 +855,11 @@ def compile_rule(rule, coll):
 
     pattern = re.sub(r"\(\?P(?:<([^>=]+)>|=([\w.]+))", norm_group, pattern)
 
-    # 尾部放宽自动补齐（2026-11-21）：规则若以 \s*$ / $ 结尾但没有「尾部放宽组」
-    # (?:\s+.*)?，就在 \s*$ 前插入一个。解决「末字段是 \S+/\d+、行尾还有残余
-    # token 时整行失配」——实测去掉手写尾巴会丢 2.9% 命中（qos car / ip urpf 重灾区）。
-    # 已手写 (?:\s+.*)? 的规则不受影响（不重复插入）。
-    stripped = pattern.rstrip()
-    if stripped.endswith(("$", "\\s*$")) and "(?:\\s+.*)?" not in pattern:
-        # 找到最后一个 $\ 前的位置：把 \s*$ 或 $ 替换为 (?:\s+.*)?\s*$
-        if stripped.endswith("\\s*$"):
-            body = stripped[:-len("\\s*$")]
-            pattern = body + "(?:\\s+.*)?\\s*$"
-        else:
-            pattern = stripped[:-1] + "(?:\\s+.*)?$"
+    # 尾部语义（2026-11-24 定案「匹配即提取」）：放宽机制已删除。
+    # · 规则带 $  → 严格整行匹配（短行类命令：pim sm / bas / statistic enable）
+    # · 规则不带 $ → 前缀匹配提取（长行/带残余参数：qos-profile X inbound identifier none）
+    # 两种写法并存，作者按命令形态自选；$ 是作者的原生锚定语法，引擎不改写。
+    # 宽规则务必排在精确规则之后（lint 会对前缀抢位告警）。
 
     return CompiledRule(re.compile(pattern), group_paths, path_groups, rule.target)
 
@@ -1691,6 +1684,22 @@ def lint(colls):
     """模板体检。返回 [(级别, 集合, 说明)]"""
     issues = []
     registry = getattr(colls, "registry", {})
+
+    # ── 规则排序检查（匹配即提取语义下）──
+    # 宽规则（是另一条规则文本的前缀）排在精确规则前面 → 警告：
+    # 前缀匹配语义下宽规则会抢先命中，精确规则永远轮不到。
+    for c in colls:
+        rules = [r.pattern for r in getattr(c, "rules", [])]
+        for i, a in enumerate(rules):
+            for b in rules[i + 1:]:
+                # a 是 b 的前缀（去锚定/空白后）且 a 更短 → a 宽、b 精
+                a_core = a.rstrip("$").rstrip()
+                b_core = b.rstrip("$").rstrip()
+                if a_core and b_core.startswith(a_core) and len(b_core) > len(a_core):
+                    issues.append(("警告", c.name,
+                                   f"规则排序：宽规则 [{a_core[:40]}] 排在它前缀的精确规则 [{b_core[:40]}] 之前，"
+                                   "宽规则会抢先命中——精确规则应排在前面"))
+                    break  # 每条宽规则只告警一次
     # ── transform 检查 ──
     # ① func= 引用必须存在于注册表
     seen_funcs = {}

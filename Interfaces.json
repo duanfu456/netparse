@@ -1,0 +1,30 @@
+{
+  "Interfaces": [
+    {
+      "Name": "Eth-Trunk7.2480",
+      "Description": "TO-HBQ-shuilishudiandisangongchengju-zhuanxian",
+      "IPv4": [
+        {
+          "Address": "111.20.96.97/30"
+        }
+      ],
+      "Pim": {
+        "DrPriority": 100,
+        "Mode": "sm"
+      },
+      "TrafficPolicy": {
+        "TrafficPolicyOut": "BeiAnWangZhang-FengDu",
+        "TrafficPolicyIn": "BeiAnWangZhang-FengDu"
+      },
+      "QosCar": {
+        "In": {
+          "Cir": 10.24
+        },
+        "Out": {
+          "Cir": 100.0
+        }
+      },
+      "AdminStatus": "up"
+    }
+  ]
+}

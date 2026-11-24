@@ -198,7 +198,7 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
 ^ {1}user-vlan\s+${UserVlan.Start}(?:\s+${UserVlan.End})?(?:\s+qinq\s+${UserVlan.QinQOuter}(?:\s+${UserVlan.QinQInner})?)?\s*$
 ^ {1}carrier down-hold-time\s+${CarrierDownHoldTime}\s*$
 ^ {1}ip binding vpn-instance\s+${IpBindingVpn}\s*$
-^ {1}ip urpf\s+${IpUrpf}\s*$
+^ {1}ip urpf\s+${IpUrpf}
 ^ {1}ipv6 enable\s*$            -> Ipv6Enable=true
 ^ {1}undo ipv6 enable\s*$       -> Ipv6Enable=false
 ^ {1}pppoe-server bind Virtual-Template\s+${PppoeTemplate}\s*$
@@ -214,7 +214,7 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
       -> QosCar.In{Cir,Pir,Cbs,Pbs,Green,Yellow,Red}
 ^ {0,1}qos car cir\s+${QosCar.Out.Cir}(?:\s+pir\s+${QosCar.Out.Pir})?(?:\s+cbs\s+${QosCar.Out.Cbs})?(?:\s+pbs\s+${QosCar.Out.Pbs})?(?:\s+green\s+${QosCar.Out.Green})?(?:\s+yellow\s+${QosCar.Out.Yellow})?(?:\s+red\s+${QosCar.Out.Red})\s+outbound\s*$
       -> QosCar.Out{Cir,Pir,Cbs,Pbs,Green,Yellow,Red}
-^ {1}qos-profile\s+${QosProfile}\s*$
+^ {0,1}qos-profile\s+${QosProfile}
 ^ {1}traffic-policy\s+${TrafficPolicy.Name}\s+${TrafficPolicy.Direction}\s*$
 ^ {1}pim\s+${Pim.Mode}\s*$
 ^ {1}pim hello-option dr-priority\s+${Pim.DrPriority}\s*$
@@ -222,7 +222,7 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
 ^ {1}isis enable\s+${Isis.Enable}\s*$
 ^ {1}isis circuit-type\s+${Isis.CircuitType}\s*$
 ^ {1}isis circuit-level\s+${Isis.CircuitLevel}\s*$
-^ {1}isis cost\s+${Isis.Cost}\s*$
+^ {1}isis cost\s+${Isis.Cost}
 ^ {1}isis ipv6 enable(?:\s+\d+)?\s*$   -> Isis.Ipv6Enable=true
 ^ {1}isis ldp-sync\s*$           -> Isis.LdpSync=true
 ^ {1}isis timer\s+${Isis.HelloInterval}\s*$
@@ -234,7 +234,7 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
 ^ {1}mpls ldp\s*$                -> MplsLdp=true
 ^ {1}mpls l2vc\s+${MplsL2vc}\s*$
 ^ {1}ipv6 mtu\s+${Ipv6Mtu}\s*$
-^ {1}igmp static-group\s+${Igmp.StaticGroup}\s*$
+^ {1}igmp static-group\s+${Igmp.StaticGroup}
 ^ {1}control-flap\s*$            -> ControlFlap=true
 ^ {1}ospf authentication-mode\s+${OspfAuthMode}\s*$
 ^ {1}vrrp vrid\s+(?P<Vrid>\d+)\s+priority\s+(?P<Priority>\d+)\s*$
@@ -256,14 +256,14 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
 ^ {1}nas logic-port\s+${NasLogicInterface}\s*$
        -> NasLogicInterface
 ^ {1}nas logic-ip\s+${NasLogicAddress}\s*$
-^ {1}port-observing\s+${PortObserving}\s*$
+^ {0,1}port-observing\s+${PortObserving}
 ^ {1}isis ipv6 cost\s+${Isis.Ipv6Cost}(?:\s+level-\d+)?\s*$
-^ {1}isis timer ldp-sync\s+${Isis.LdpSyncTimer}\s*$
-^ {1}isis authentication-mode\s+${Isis.AuthMode}\s*$
+^ {1}isis timer ldp-sync\s+${Isis.LdpSyncTimer}
+^ {1}isis authentication-mode\s+${Isis.AuthMode}
 ^ {1}mpls ldp timer\s+${MplsLdpTimer}\s*$
 ^ {1}ospf network-type\s+${OspfNetworkType}\s*$
 ^ {1}ospf cost\s+${OspfCost}\s*$
-^ {1}ospf timer\s+${OspfTimer}\s*$
+^ {0,1}ospf timer\s+${OspfTimer}
 ^ {1}port-mirroring\s+${PortMirroring}\s*$
 ^ {1}negotiation\s+${Negotiation}\s*$
 ^ {1}forward-mode\s+${ForwardMode}\s*$
@@ -316,9 +316,9 @@ MacAddress    type(str)  reg([\w-]+) desc(静态 MAC)
   [rule]
   ^ {2}access-type\s+${AccessType}\s+default-domain\s+authentication\s+${AuthDomain}\s*$
         -> AccessType,AuthDomain
-  ^ {2}access-type\s+${AccessType}\s+default-domain\s+pre-authentication\s+${PreAuthDomain}\s*$
+  ^ {2}access-type\s+${AccessType}\s+default-domain\s+pre-authentication\s+${PreAuthDomain}(?:\s+authentication\s+${AuthDomain})?
         -> AccessType,PreAuthDomain
-  ^ {2}access-type\s+${AccessType}\s*$
+  ^ {2}access-type\s+${AccessType}
   ^ {2}authentication-method\s+${Method}\s*$
   ^ {2}nas logic-ip\s+${NasLogicIp.Address}\s*$
   ^ {2}nas logic-port\s+${NasLogicPort.Interface}\s*$
