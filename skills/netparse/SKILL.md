@@ -1,153 +1,211 @@
----
-name: netparse
-description: "This skill should be used when the user asks to parse network device configuration files (Huawei VRP, ZTE M6000) into structured CMDB JSON, batch-parse a folder of configs into per-device JSON files, validate an existing .cmdb template, or extend a template with new command rules or Python transform functions. Includes netparse.exe (no Python required) and ready-made validated templates."
-official: false
-version: 2.0.0
-agent_created: true
----
+# netparse
 
-# netparse — 网络设备配置 → CMDB JSON
+网络设备配置解析器。把华为 / 中兴 / Nokia 等设备的**配置文件**按模板 DSL 解析成结构化 JSON，
+用于 CMDB 与接口台账。
 
-把设备配置文件按模板解析成结构化 JSON，用于 CMDB 入库与接口台账。
+零运行时第三方依赖，只用 Python 标准库。
 
-**本文件夹自包含**：`netparse.exe`（无需 Python）+ 已验证模板 + 速查文档。
-`<SKILL>` = 本文件夹（SKILL.md 所在目录）。所有命令都在 `<SKILL>` 内完成，不依赖仓库其他位置。
+## 📚 文档地图
 
-## 1. 前置检查
+全部文档索引见 **[docs/README.md](docs/README.md)**（模板手册 / 速查 / CLI / Python API / 自测试专篇）。
+
+## 安装
 
 ```bash
-<SKILL>\netparse.exe --version    # 需输出 netparse 0.3.0+
+pip install -e .
 ```
 
-| 现象 | 处理 |
-|---|---|
-| exe 被杀软拦截 | 加入白名单 |
-| 中文乱码 | exe 已强制 UTF-8 输出；显示乱码是终端编码问题，不影响落盘文件 |
-| `--version` 失败 | exe 损坏，重新拷贝本文件夹 |
-
-## 2. 常用命令（全部实测）
-
-模板用 `<SKILL>\templates\` 下的现成文件；`<配置>` 可以是单个文件，也可以是文件夹（文件夹 = 批量模式）。
+不装也能用（把 `src` 加进 `PYTHONPATH` 即可）：
 
 ```bash
-EXE=<SKILL>\netparse.exe
-TPL=<SKILL>\templates\huawei-vrp.np
-
-# ① 单文件，stdout 摘要（人看：lint 提示 + 集合树 + 条数 + 前 2 条样例）
-%EXE% parse %TPL% device.cfg
-
-# ② 单文件，stdout 完整 JSON（程序读取）
-%EXE% parse %TPL% device.cfg --json
-
-# ③ 单文件，落盘
-%EXE% parse %TPL% device.cfg out.json
-
-# ④ 文件夹批量：每个配置文件一个同名 .json 落到输出目录（第三个参数必填）
-%EXE% parse %TPL% E:\配置\华为\ E:\out\
-
-# 模板体检（写完/改完模板必跑）
-%EXE% lint %TPL%
-%EXE% lint %TPL% --strict    # 有警告也非零退出
+PYTHONPATH=src python -m netparse --help
 ```
 
-**输出约定**（AI 读结果靠这个）：
+## 快速开始
 
-- `--json` 时 **stdout 是纯 JSON**，顶层 key 就是集合名（`Interfaces` / `RouteStatics` / ...），`2>/dev/null` 后直接 `json.load`
-- 批量模式：逐个读输出目录里的 `.json`；单个文件失败不中断，stderr 打 `[fail] 文件名: 原因`，退出码非 0
-- 退出码：0 = 成功；非 0 = 有错误
-- 密码输出为 `******`（脱敏默认开启，属正常）
+### 作为库
 
-| 现象 | 处理 |
-|---|---|
-| `错误：config 是文件夹时必须指定输出目录` | 批量模式第三个参数必填 |
-| 批量退出码非 0 | stderr 有 `[fail] 文件名: 原因`，报告失败文件 |
+```python
+from netparse import parse_template, run
 
-## 3. 现成模板
+colls = parse_template("templates/huawei-vrp.np")
+with open("device.cfg", encoding="utf-8") as f:
+    result = run(colls, f.readlines())
 
-模板在 `<SKILL>\templates\`：
-
-| 文件 | 覆盖 | 状态 |
-|---|---|---|
-| `huawei-vrp.np` | 华为 VRP 单文件版：接口（92 字段）/静态路由/VPN/BGP/ACL/NQA/设备信息/静态用户/QoS Profile，18 集合 | 318 台真机验证，接口块覆盖率 100% |
-| `huawei/main.np` | 华为模块化版（入口）：9 个功能组文件（device/interfaces/routes/vpn/bgp/acl/nqa/static-user/qos），`from import *` 组合（`.cmdb` 后缀可省略）；输出裁剪 `--fields 集合=字段1,字段2`（Key 自动保留）；与单文件版输出逐字节一致 | 可单独跑某组调试（`parse 02-routes.np <配置>`） |
-| `[__main__]` 自测试段 | 模板尾部完整 Python（`run(colls, lines)` + assert），**模板加载时自动执行**，失败显式报错；print 走 stderr | 改模板必看测试（机制强制） |
-| VSCode 插件 | `editor/vscode-netparse/`：.cmdb 高亮 + 补全 + lint 实时诊断 + `[__main__]` CodeLens 运行自测试（`vsce package` 打 vsix） | 模板作者编辑器 |
-| `transforms_huawei.py` | 华为 transform 函数：`iface_type`（接口类型派生，21,427 接口实测 100%） | 随模板热改，无需重打包 |
-| `zte-m6000.np` | 中兴 M6000：分区根命令模型 | 64 台验证 |
-
-接到任务后先确认模板覆盖范围：`%EXE% lint %TPL%` 看集合树与字段数。
-
-## 4. 高频任务剧本
-
-### 4.1 解析一份配置，给出接口清单
-
-```bash
-%EXE% parse %TPL% <配置文件> --json 2>/dev/null
+for itf in result["Interfaces"]:
+    print(itf["Name"], itf.get("Description", ""))
 ```
 
-读 stdout JSON 的 `Interfaces` 数组（Name/Description/Type/IpAddress/...），直接回答。
+只要凭据脱敏、不要形态兜底：
 
-### 4.2 批量解析整个文件夹，每台一个 JSON
+```python
+from netparse import masking, parse_template, run
 
-```bash
-%EXE% parse %TPL% <配置文件夹> <输出目录>
+masking.CONFIG.heuristic = False     # 只保留模板 type(secret) 的精确遮蔽
+colls = parse_template("templates/huawei-vrp.np")
+result = run(colls, lines)
+masking.CONFIG.reset()               # 复位
 ```
 
-完成后报告成功/失败数与失败原因（stderr `[fail]` 行）。
+### 模板里的字段 transform（`func=`）
 
-### 4.3 模板要支持一条新命令
-
-1. **统计形态**：读 1~3 份真实配置，看目标命令的全部变体（凭印象写规则是模板 bug 的主要来源）
-2. **写规则**：在模板 `[value]` 加字段、`[rule]` 加正则行；正则从真实配置抄，不自创
-3. **lint 必须过**：`%EXE% lint xx.cmdb --strict` → 0 错误 0 警告
-4. **小样验证**：`%EXE% parse xx.cmdb 样例.cfg --json`，核对字段值
-5. **批量验证**：文件夹模式跑一批，抽查 JSON
-
-语法速查见 `<SKILL>\docs\TEMPLATE-CHEATSHEET.md`。
-
-### 4.4 给字段加派生/换算逻辑（transform 函数）
-
-1. 写函数：签名必须 `def f(value, record=None)`。`value` = 捕获值（字段无捕获行时为 `None`）；
-   `record` = 当前记录 dict（跨字段派生用 `record.get("Name")`）；返回 `None` = 字段留空
-2. 放置：<30 行且只此模板用 → 写进模板 `[python]` 段；多模板共用 → 写进
-   `templates/transforms_huawei.py`（模板头部已有 `[python_file]` 引用）
-3. 字段声明加 `func=函数名`
-4. lint 必须过（`func=` 未定义、`secret` 字段挂 `func=` 都会被拦）
-5. 小样验证派生值。改 `transforms_*.py` **不需要重打包**（外置热改）
-
-## 5. 排查：解析结果不对 / 字段是空的
-
-按顺序查：
-
-1. `lint` 有没有错误/警告
-2. 目标命令在配置里的**真实形态** vs 模板正则——形态不符是第一大原因（先数命令前导空格数）
-3. 字段是不是 `func=` 派生 → 检查函数逻辑与被依赖字段（如 `iface_type` 依赖 `Name`）
-4. 缩进锚定：命令前导空格数与规则前缀 `^ {n}` / 集合 `indent(n)` 是否一致
-
-## 6. 模板语法速览与铁律
-
-三要素（完整对照见 `<SKILL>\docs\TEMPLATE-CHEATSHEET.md`）：
+模板可以带自己的 Python 函数（`[python]` 内联块或 `[python_file]` 外部文件，
+路径相对模板自身），对任意字段做派生/规范化：
 
 ```text
-[python_file]                       ← 可选：外置 transform 函数（相对本模板的路径）
-transforms_huawei.py
+[python_file]
+transforms_huawei.py          ← 与模板同目录，多模板可共用
 
-Interfaces type(list) start(^interface\s+) end(^#$) end_indent(0) indent(1)
-[value]                             ← 字段声明（缩进 = 子集合层级）
+[value]
 Name type(str) reg(\S+) option(Key)
-Type type(str) func=iface_type desc(接口类型)
-[rule]                              ← 规则：${字段} 引用 reg 捕获
-^interface\s+${Name}(?:\s+.*)?\s*$
-^ {1}description\s+${Description}\s*$
+Type type(str) func=iface_type desc(接口类型)      ← 从 Name 派生
+[rule]
+...
 ```
 
-**铁律**（违者必出 bug）：
+函数签名 `def f(value, record=None)`；返回 `None` 表示字段留空；
+异常被引擎捕获并记 lint 警告。完整语义见 `TEMPLATE-GUIDE.md` 场景 16。
 
-1. 正文行前缀 `^ {n}` 精确锚定缩进（n = 真实配置的前导空格数），禁止 `^\s+`
-2. 规则以 `$` 结尾即可——尾部 `(?:\s+.*)?\s*$` 引擎自动补，不要手写；
-   一条规则写多个 target 用 `;` 分隔：`-> In{...};Out{...}`
-3. `indent(n)` 管"进门要几空格"，`end_indent(n)` 管"出门的 `#` 要几空格"；
-   同一命令出现在多个缩进层（如接口级 vs bas 视图）时必须靠它们分流
-4. `default(...)` 只用于设备行为兜底，禁止造没出现的值
-5. `secret` 字段禁止 `func=`；`func=` 引用的函数必须已定义（lint 会查）
-6. 中兴开关词是 `no`，华为是 `undo`
+### 作为命令行
+
+```bash
+netparse parse templates/huawei-vrp.np device.cfg            # 集合树 + 条数
+netparse parse templates/huawei-vrp.np device.cfg --json     # 完整 JSON
+netparse lint  templates/huawei-vrp.np                       # 模板体检
+```
+
+## 子命令
+
+| 子命令 | 用途 |
+|---|---|
+| `netparse parse` | 按模板解析配置文件 |
+| `netparse lint` | 模板体检（规则引用、字段声明、凭据标注等） |
+| `netparse diff` | 与 incumbent 的 19 列台账三栏对比（需生产只读语料） |
+| `netparse route-forms` | 静态路由多形态校验（需生产只读语料） |
+| `netparse readonly` | 只读目录树基线采集 / 校验 |
+
+前两个子命令不依赖任何外部资产，后三个需要挂载生产只读目录。
+
+## 模板 DSL 一句话
+
+集合用缩进表达层级，每层可声明 `start` / `end` / `indent` / `end_indent` / `[value]` / `[rule]`：
+
+```text
+Interfaces type(list) start(^interface\s+) end(^#$) end_indent(0) indent(1) desc(接口集合)
+[value]
+Name type(str) reg(\S+) desc(名称) option(Key)
+Description type(str) reg(.+) desc(描述)
+AdminStatus type(str) reg(up|down) desc(管理状态)
+[rule]
+^interface\s+${Name}\s*$
+^ {1}description\s+${Description}\s*$
+^ {1}undo shutdown\s*$          -> AdminStatus=up
+^ {1}shutdown\s*$               -> AdminStatus=down
+```
+
+- 裸 `#` / `!` 是**块分隔符**（不是注释），参与 `end` 出栈；
+  `end_indent(0)` 表示只有顶格的 `#` 才关本层
+- `indent(1)` 表示本集合的规则只匹配「恰好 1 个前导空格」的行——
+  华为现网缩进 100% 一致（318 台实测），用它能把同一条命令在
+  不同缩进层出现时分进不同集合（如 `bas` 视图正文）
+- **规则匹配语义（匹配即提取）**：规则带 `$` = 严格整行匹配（短行类
+  命令 `pim sm` / `bas`）；不带 `$` = 前缀匹配提取（长行/带残余参数）。
+  `$` 是作者原生锚定语法，引擎不改写任何行尾
+- **独立测试段**：`[__main__]` 只放正式逻辑（`if cfg` 真解析）；
+  测试放 `[__test__.NN]`（每段自带 cfgstr + expect 完全自包含）。
+  `netparse X.np` 不执行测试段（零残留）；`-t` 跑全部；`-t 01,03` 跑指定
+
+## 文档索引
+
+| 文档 | 给谁看 | 内容 |
+|---|---|---|
+| `docs/TEMPLATE-CHEATSHEET.md` | **写模板的人** | 速查版：集合/字段/规则/transform 声明对照表 + 常见坑 |
+| `docs/TEMPLATE-GUIDE.md` | 深入模板语法 | 完整语法 + 16 个场景手册 + 真实审查数据（第 8 节） |
+| `docs/CLI-GUIDE.md` | 命令行用户 | parse / lint / diff / readonly 全参数 + 管道约定 |
+| `docs/PYTHON-GUIDE.md` | 集成开发者 | 库调用两步模型、批量解析、脱敏控制、transform 警告 |
+| `skills/netparse/SKILL.md` | AI 工具用户 | 自包含 skill 说明（exe 调用约定/模板铁律/高频任务剧本） |
+| `docs/FINAL-plan.md` | 架构/评审 | 总方案：架构 / 实测数据 / 缺口 / 路线 |
+
+2026-11 模板审查的实测数据与设计原则见 TEMPLATE-GUIDE 第 8 节；
+transform（`func=`）语义见场景 16 与 `.devforge/spec/changes/transform-func/design.md`。
+
+## 目录结构
+
+```
+src/netparse/
+├─ engine.py           嵌套状态栈引擎（parse_template / run / lint / compile_rule）
+├─ masking.py          脱敏策略（L1 type(secret) + L2 密文形态兜底）
+├─ paths.py            仓库路径解析
+├─ adapters/           形状适配器（netparse JSON → incumbent 形状）
+└─ cli/                命令行子命令
+    ├─ parse.py        parse / lint
+    ├─ diff.py         19 列三栏 diff
+    ├─ route_forms.py  静态路由校验
+    └─ readonly.py     只读基线
+tools/                 兼容 shim（旧命令仍可用）+ legacy/ 历史探针
+                       + _probe_*.py 测量脚本（守恒 / 缺口 / 基线 / 形态统计）
+templates/             模板（华为 VRP 18 集合单文件版 + huawei/ 模块化目录版（main.np+9组）/ 中兴 M6000 / Nokia SROS）
+tests/                 单元测试与 fixture 回归
+```
+
+## 当前状态（2026-11-24）
+
+| 指标 | 数值 |
+|---|---|
+| 华为模板 | 15 个集合（8 个子集合），接口块内覆盖率 **100%**（318 台 / 166 万行实测） |
+| 中兴模板 | `zte-m6000.np`（分区根命令模型），64 台实测 0 失败 / 0 密文泄漏 |
+| ACL 规则 | 14,723 / 14,723 全解析 |
+| 块数守恒 | 6 类块 × 20 台逐台核对全部一致 |
+| 脱敏 | 引擎层 `type(secret)` + 密文形态兜底（华为 + 中兴密文形态），全量零明文 |
+| transform | 字段级 `func=` + `[python]`/`[python_file]` 双段；接口类型 0% → **100%**（21,427 接口） |
+| exe 打包 | `dist/netparse.exe`（~7MB 单文件，PyInstaller），接收方无需 Python |
+| AI skill 分发包 | `skills/netparse/` 自包含：exe + 模板 + 速查文档 + SKILL.md，拷进 AI 工具 skills 目录即用 |
+| 多 target 语法 | `-> In{...};Out{...}`（`;` 分隔），一条规则写多个目标——QosProfiles In/Out 视图即此实现 |
+| target 引用赋值 | `-> Out{Cir=In.Cir,...}`（键=捕获组路径），跨字段复制捕获值 |
+| 模板模块化 | `import x.cmdb` / `from x.cmdb import *\|集合名`，路径相对当前文件；循环检测/缺失报错/同名集合报错；`templates/huawei/main.np` 为入口（9 组） |
+| 限速单位换算 | QosProfiles Cir/Pir→M、Cbs/Pbs→MB（kbps_to_m / bytes_to_mb transform） |
+| 字段白名单 | `--fields "Interfaces=Name,Type,IpAddress"`（解析全量、输出按需；Key 字段自动保留；引用不存在集合名报错并列出可用集合） |
+| 真机批量回归 | `tools/batch_real.py`：模块化 vs 单文件输出逐一致校验（234 份 BRAS 真机 100% 一致） |
+| 模板自测试 | 模板尾部 `[__main__]` 段写完整 Python（`run(colls, cfg.splitlines())` + assert），**模板加载时自动执行**；失败显式报错——"改模板必看测试"固化为机制 |
+| 评估期探针 | `tools/probes-archive/`：14 个一次性探针归档（不再维护）；活跃工具见 `tools/` |
+| VSCode 插件 | `editor/vscode-netparse/`：.cmdb 语法高亮 + 自动补全 + lint 实时诊断 + 定义跳转 + `[__main__]` CodeLens 运行自测试（`vsce package` 打 .vsix 安装） |
+| 编辑器 | 本地 Web（`python editor/server.py`）：lint 实时检查、`${` 字段补全、集合折叠、选中试运行、保存守门 |
+| 台账 19 列 | 8/19 完整对齐，其余列的模板规则已补，**台账口径复测未跑** |
+
+## 兼容性
+
+`tools/` 下保留了薄 shim，旧命令仍然可用：
+
+```bash
+python tools/probe_stack.py <模板> <配置> --json
+python tools/diff_incumbent.py --all --jobs 12
+```
+
+会有一行 `DeprecationWarning` 提示改用 `netparse` 子命令。
+
+## 测试
+
+```bash
+python tests/test_engine_scope.py       # 引擎作用域（#/! 分隔符、end 匹配）
+python tests/test_masking.py            # 脱敏单元
+python tests/test_adapter.py            # 适配器映射样例
+python tests/test_cli.py                # CLI 与包结构
+python tests/test_diff_incumbent.py     # diff 工具纯逻辑
+python tests/run_regression.py          # 端到端回归（--update 覆盖基线）
+```
+
+前四个不依赖外部资产；`test_diff_incumbent.py` 与 `netparse diff` 需要生产只读语料。
+
+## 测量与验证工具（写模板必跑）
+
+```bash
+python tools/_probe_conserve.py     # 块数守恒：模板解析块数 vs 配置真实块数（逐台核对）
+python tools/_probe_gap_split.py    # 接口块内缺口 A/B/C 分解（未建模 / 写法 / 命中）
+python tools/_probe_baseline.py --compare   # 与基线对比覆盖率与字段填充率（--save 刷新）
+python tools/_probe_acl_verify.py   # ACL 绝对条数核对
+python tools/_probe_iface_forms.py  # 命令形态统计（写规则前先跑这个）
+```
+
+> 这些探针依赖生产语料目录（`tools/_cfginspect.py` 里的 `DEFAULT_ROOT`），
+> 换环境时改那个常量。统计口径是**引擎内埋点的真实匹配结果**，
+> 事后用正则重测会把作用域外的同名命令误判成已覆盖。

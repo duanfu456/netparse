@@ -898,3 +898,16 @@ E:\配置文件\配置解析\华为\
 
 **实测基线**：`E:\配置文件\BRAS&SR\解析后\_index.json`
 → `file_count 8440 / ok 8440 / empty 0 / fail 0 / total_interfaces 6,278,430`
+
+| v8 匹配即提取+测试段 | **规则匹配语义定案**：`$` = 严格整行匹配（短行类），无 `$` = 前缀
+  匹配提取（长行/带残余参数）——删除尾部自动放宽机制（`mpls$` 误吞
+  `mpls l2vc` 类灾难根除；ON/OFF 全量 234 份 A/B 驱动模板审计 11 处修复，
+  Pim.DrPriority 2323 补齐、MplsL2vc 98 新增）；lint 新增前缀规则排序告警。
+  **lint 无副作用**：`parse_template(skip_main)`——lint 只收集不执行
+  [__main__] 段（消除 VSCode 保存即触发段内 save 的隐式副作用）。
+  **[__test__.NN] 独立测试段**（用户提案定案，无继承版）：[__main__]
+  职责收敛为程序化主逻辑；每测试段自带 cfgstr+expect 完全自包含；
+  `-t` 全跑 / `-t 01,03` 指定；段间独立命名空间，一段失败不影响其余；
+  插件 0.4.7 段头 CodeLens「▶ 运行测试 NN」；模板审计修复 IpUrpf/
+  QosProfile/Bas/pre-authentication/Igmp/PortObserving/OspfTimer/
+  Isis×3/MplsL2vc 等 11 处 |

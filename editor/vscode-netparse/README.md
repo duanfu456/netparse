@@ -11,6 +11,7 @@ netparse 模板 DSL（`.np` / `.cmdb`）的 VSCode 语言支持插件——语�
 - **实时 lint**：保存即体检——未声明字段、正则错误、目标字段缺失直接标红
 - **定义跳转**：`import` / `from x import *` 跳到子模板文件；`${字段}` 跳到声明处
 - **CodeLens 自测试**：`[__main__]` 段顶部「▶ 运行自测试」，一键执行并显示 PASS/FAIL
+- **测试段 CodeLens**：每个 `[__test__.NN]` 段头「▶ 运行测试 NN」，单独跑该测试段（`parse -t NN`）
 - **`[__main__]` snippet**：输入 `__main__` 展开完整冒烟段模板（cfgstr 样例 + expect= 断言 + 全部高级用法注释示例）
 
 ## 快速开始
