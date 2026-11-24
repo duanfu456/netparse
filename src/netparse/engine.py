@@ -894,8 +894,12 @@ def _get_by_path(results, path):
 def _run_expect(expect_text, results):
     """expect= 文本 → [(行号, 路径, 期望, 实际)] 失败列表。"""
     failures = []
+    def _contains(a, b):
+        return str(b) in str(a)
+
     op_map = {">=": lambda a, b: a >= b, "<=": lambda a, b: a <= b,
-              ">": lambda a, b: a > b, "<": lambda a, b: a < b}
+              ">": lambda a, b: a > b, "<": lambda a, b: a < b,
+              "contains": _contains}
     for lineno, raw in enumerate(expect_text.splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -906,8 +910,13 @@ def _run_expect(expect_text, results):
                 actual, found = _get_by_path(results, fpath.strip())
                 if not found:
                     failures.append((lineno, fpath.strip(), op + " " + want_s, "<缺失>"))
-                elif not cmp_fn(actual, float(want_s)):
-                    failures.append((lineno, fpath.strip(), op + " " + want_s, actual))
+                else:
+                    try:
+                        want_v = float(want_s)
+                    except ValueError:
+                        want_v = want_s
+                    if not cmp_fn(actual, want_v):
+                        failures.append((lineno, fpath.strip(), op + " " + want_s, actual))
                 break
         else:
             if "=" in line:
