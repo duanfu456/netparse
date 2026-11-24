@@ -1,0 +1,79 @@
+[python]
+import re as _re
+
+MONTHS = {"Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "May": "05",
+          "Jun": "06", "Jul": "07", "Aug": "08", "Sep": "09", "Oct": "10",
+          "Nov": "11", "Dec": "12"}
+
+def fmt_time(value, record=None):
+    """Mar 20 2026 08:58:08+08:00 → 2026-03-20 08:58:08"""
+    if not value:
+        return value
+    m = _re.match(r"([A-Z][a-z]{2})\s+(\d{1,2})\s+(\d{4})\s+(\d{2}:\d{2}:\d{2})", value)
+    if not m:
+        return value
+    mon, day, year, hms = m.groups()
+    return "%s-%s-%02d %s" % (year, MONTHS.get(mon, "00"), int(day), hms)
+
+def kv_get(key):
+    """从 Params 提取指定键的值（容忍值内逗号）"""
+    def _f(value, record=None):
+        if not value:
+            return None
+        for p in _re.split(r",\s*(?=[A-Za-z][A-Za-z0-9_]*=)", value):
+            if p.startswith(key + "="):
+                v = p[len(key) + 1:].strip()
+                return v.strip(chr(34)) or None
+        return None
+    _f.__name__ = "kv_" + key
+    return _f
+
+kv_Task      = kv_get("Task")
+kv_RemoteIp  = kv_get("RemoteIp")
+kv_VpnName   = kv_get("VpnName")
+kv_User      = kv_get("User")
+kv_AuthMethod = kv_get("AuthenticationMethod")
+kv_Command   = kv_get("Command")
+kv_LocalIp   = kv_get("LocalIp")
+
+
+Commands type(list) start(%%01CLI/5/CMDRECORD) end_indent(0) indent(0) desc(用户操作指令)
+[value]
+Time     type(str) reg((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{4}\s+\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}) desc(时间) func=fmt_time
+Host     type(str) reg(\S+) desc(设备名称)
+Task type(str) reg([A-Za-z0-9]+) desc(Task) func=kv_Task
+RemoteIp type(str) reg([0-9.]+) desc(RemoteIp) func=kv_RemoteIp
+VpnName type(str) reg([A-Za-z0-9_-]+) desc(VpnName) func=kv_VpnName
+User type(str) reg([A-Za-z0-9_]+) desc(User) func=kv_User
+AuthMethod type(str) reg([A-Za-z0-9-]+) desc(AuthenticationMethod) func=kv_AuthMethod
+Command type(str) reg([^"]+) desc(Command) func=kv_Command
+LocalIp  type(str) reg([0-9.]+) desc(LocalIp) func=kv_LocalIp
+[rule]
+^ {0,1}(${Time})
+    \s+(${Host})\s+
+    %%01CLI/5/CMDRECORD\(s\):CID=\S+;
+    Recorded command information\.\s*\(
+    Task=(${Task}),
+    \s*RemoteIp=(${RemoteIp}),
+    \s*.*?VpnName=(${VpnName}),
+    \s*.*?User=(${User}),
+    \s*.*?AuthenticationMethod="(${AuthMethod})",
+    \s*.*?Command="(${Command})",
+    \s*.*?LocalIp=(${LocalIp})\.\)
+
+[__test__.01]
+# title: CMDRECORD 全字段提取
+cfgstr = """
+Mar 20 2026 08:58:08+08:00 SNBJI-MC-CMNET-SR01-JTSCL/NE40E-X16A %%01CLI/5/CMDRECORD(s):CID=0x80ca2713;Recorded command information. (Task=VTY0, RemoteIp=211.137.117.189, VpnName=_public_, User=IP_GongZuoTai, AuthenticationMethod="Local-user", Command="display switchover state", LocalIp=218.200.1.139.)
+#
+"""
+expect = |
+  Commands[0].Time = 2026-03-20 08:58:08
+  Commands[0].Host = SNBJI-MC-CMNET-SR01-JTSCL/NE40E-X16A
+  Commands[0].Task = VTY0
+  Commands[0].RemoteIp = 211.137.117.189
+  Commands[0].VpnName = _public_
+  Commands[0].User = IP_GongZuoTai
+  Commands[0].AuthMethod = Local-user
+  Commands[0].Command = display switchover state
+  Commands[0].LocalIp = 218.200.1.139
