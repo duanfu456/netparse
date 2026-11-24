@@ -25,6 +25,10 @@ function activate(ctx) {
     ctx.subscriptions.push(vscode.languages.registerDefinitionProvider(
         'cmdb', new CmdbDefinitionProvider()));
 
+    // ── hover：cfgstr 三引号块说明 ──
+    ctx.subscriptions.push(vscode.languages.registerHoverProvider(
+        'cmdb', new CmdbHoverProvider()));
+
     // ── 4. [__main__] CodeLens：▶ 运行自测试 ──
     ctx.subscriptions.push(vscode.languages.registerCodeLensProvider(
         'cmdb', new CmdbCodeLensProvider()));
@@ -242,6 +246,37 @@ module.exports = { activate, deactivate };
 
 
 // ═══ [__main__] CodeLens 与自测试执行 ═══
+class CmdbHoverProvider {
+    provideHover(doc, pos) {
+        // 向上找最近的 cfgstr = """ 行与对应的闭合 """ 行，
+        // 光标在块内时给说明
+        let start = -1;
+        for (let i = pos.line; i >= 0; i--) {
+            const t = doc.lineAt(i).text;
+            if (/^\s*\w+\s*=\s*"""/.test(t)) { start = i; break; }
+            if (/^\s*\[/.test(t)) break;   // 碰到段头还没找到 → 不在字符串里
+        }
+        if (start < 0) return null;
+        for (let j = start + 1; j < doc.lineCount; j++) {
+            if (doc.lineAt(j).text.includes('"""')) {
+                // 光标在 start..j 区间内 → 提供说明
+                if (pos.line >= start && pos.line <= j) {
+                    const varName = doc.lineAt(start).text.match(/^\s*(\w+)\s*=/);
+                    const md = new vscode.MarkdownString();
+                    md.appendMarkdown(
+                        '**' + (varName ? varName[1] : 'cfgstr') + '** — 三引号字符串块\n\n' +
+                        '内容是**样例配置文本**（原样传给引擎解析）。\n\n' +
+                        '块内 `#` 是**配置文件分隔符**（华为配置的一部分），' +
+                        '不是模板注释——引擎不会跳过它们。');
+                    return new vscode.Hover(md, new vscode.Range(start, 0, j, 0));
+                }
+                return null;
+            }
+        }
+        return null;
+    }
+}
+
 class CmdbCodeLensProvider {
     provideCodeLenses(doc) {
         const lenses = [];

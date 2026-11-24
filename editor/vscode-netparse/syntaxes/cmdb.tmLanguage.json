@@ -3,14 +3,33 @@
   "name": "netparse CMDB",
   "scopeName": "source.cmdb",
   "patterns": [
-    { "include": "#comment" },
-    { "include": "#section-header" },
-    { "include": "#collection-decl" },
-    { "include": "#field-decl" },
-    { "include": "#import-line" },
-    { "include": "#target-line" },
-    { "include": "#rule-line" },
-    { "include": "#python-file-ref" }
+    {
+      "include": "#triple-string"
+    },
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#section-header"
+    },
+    {
+      "include": "#collection-decl"
+    },
+    {
+      "include": "#field-decl"
+    },
+    {
+      "include": "#import-line"
+    },
+    {
+      "include": "#target-line"
+    },
+    {
+      "include": "#rule-line"
+    },
+    {
+      "include": "#python-file-ref"
+    }
   ],
   "repository": {
     "comment": {
@@ -22,33 +41,61 @@
       ]
     },
     "section-header": {
-      "match": "^\\s*(\\[value\\]|\\[vlaue\\]|\\[rule\\]|\\[python\\]|\\[python_file\\])\\s*$",
+      "match": "^\\s*(\\[value\\]|\\[vlaue\\]|\\[rule\\]|\\[python\\]|\\[python_file\\]|\\[__main__\\]|\\[__test__(?:\\.\\d+)?\\])\\s*$",
       "captures": {
-        "1": { "name": "keyword.control.section.cmdb" }
+        "1": {
+          "name": "keyword.control.section.cmdb folding.mark.section-start.cmdb"
+        }
       }
     },
     "collection-decl": {
       "match": "^([A-Z]\\w*)\\s+(type\\((?:list|dict)\\))((?:\\s+start\\([^)]*\\))?)(?:\\s+(end\\([^)]*\\)))?(?:\\s+(end_indent\\(\\d+\\)))?(?:\\s+(indent\\(\\d+\\)))?(?:\\s+(desc\\([^)]*\\)))?.*$",
       "captures": {
-        "1": { "name": "entity.name.type.cmdb" },
-        "2": { "name": "storage.type.cmdb" },
-        "3": { "name": "support.function.cmdb" },
-        "4": { "name": "support.function.cmdb" },
-        "5": { "name": "support.function.cmdb" },
-        "6": { "name": "support.function.cmdb" },
-        "7": { "name": "string.quoted.double.cmdb" }
+        "1": {
+          "name": "entity.name.type.cmdb"
+        },
+        "2": {
+          "name": "storage.type.cmdb"
+        },
+        "3": {
+          "name": "support.function.cmdb"
+        },
+        "4": {
+          "name": "support.function.cmdb"
+        },
+        "5": {
+          "name": "support.function.cmdb"
+        },
+        "6": {
+          "name": "support.function.cmdb"
+        },
+        "7": {
+          "name": "string.quoted.double.cmdb"
+        }
       }
     },
     "field-decl": {
       "comment": "[value] 段字段声明：名字 type(...) [func=...] [option(...)] [default(...)] [desc(...)]",
       "match": "^\\s+(\\w+)\\s+(type\\([^)]*\\))((?:\\s+func=\\S+)?)(?:\\s+(option\\([^)]*\\)))?(?:\\s+(default\\([^)]*\\)))?(?:\\s+(desc\\([^)]*\\)))?.*$",
       "captures": {
-        "1": { "name": "variable.other.member.cmdb" },
-        "2": { "name": "storage.type.cmdb" },
-        "3": { "name": "support.function.cmdb" },
-        "4": { "name": "keyword.other.flag.cmdb" },
-        "5": { "name": "constant.numeric.cmdb" },
-        "6": { "name": "string.quoted.double.cmdb" }
+        "1": {
+          "name": "variable.other.member.cmdb"
+        },
+        "2": {
+          "name": "storage.type.cmdb"
+        },
+        "3": {
+          "name": "support.function.cmdb"
+        },
+        "4": {
+          "name": "keyword.other.flag.cmdb"
+        },
+        "5": {
+          "name": "constant.numeric.cmdb"
+        },
+        "6": {
+          "name": "string.quoted.double.cmdb"
+        }
       }
     },
     "import-line": {
@@ -60,26 +107,46 @@
       "comment": "-> target 行：In{...};Out{...} / Field=常量 / Out{Cir=In.Cir}",
       "match": "^\\s*->\\s*(.*)$",
       "captures": {
-        "1": { "patterns": [
-          { "include": "#field-ref" },
-          { "include": "#target-members" },
-          { "include": "#target-assign" }
-        ] }
+        "1": {
+          "patterns": [
+            {
+              "include": "#field-ref"
+            },
+            {
+              "include": "#target-members"
+            },
+            {
+              "include": "#target-assign"
+            }
+          ]
+        }
       }
     },
     "target-members": {
       "comment": "集合名{成员,...} 形态",
       "match": "([A-Za-z_][\\w.]*)\\{([^}]*)\\}",
       "captures": {
-        "1": { "name": "entity.name.function.target.cmdb" },
-        "2": { "patterns": [ { "include": "#field-ref" } ] }
+        "1": {
+          "name": "entity.name.function.target.cmdb"
+        },
+        "2": {
+          "patterns": [
+            {
+              "include": "#field-ref"
+            }
+          ]
+        }
       }
     },
     "target-assign": {
       "match": "(\\w+)=(\\S+)",
       "captures": {
-        "1": { "name": "variable.parameter.cmdb" },
-        "2": { "name": "constant.other.cmdb" }
+        "1": {
+          "name": "variable.parameter.cmdb"
+        },
+        "2": {
+          "name": "constant.other.cmdb"
+        }
       }
     },
     "field-ref": {
@@ -94,6 +161,40 @@
     "python-file-ref": {
       "match": "^\\s*transforms[\\w.]*\\.py$|^\\s*\\w+[\\w/]*\\.py$",
       "name": "string.unquoted.pyfile.cmdb"
+    },
+    "triple-string": {
+      "begin": "(\\w+)\\s*=\\s*(\"\"\"|\\'\\'\\')",
+      "beginCaptures": {
+        "1": {
+          "name": "variable.other.assignment.cmdb"
+        },
+        "2": {
+          "name": "string.quoted.triple.cmdb punctuation.definition.string.begin.cmdb"
+        }
+      },
+      "end": "\\2",
+      "endCaptures": {
+        "0": {
+          "name": "string.quoted.triple.cmdb punctuation.definition.string.end.cmdb"
+        }
+      },
+      "patterns": [
+        {
+          "match": "^\\s*#!??.*$",
+          "name": "string.quoted.triple.cmdb comment.inside-string.cmdb"
+        },
+        {
+          "include": "#string-inner"
+        }
+      ]
+    },
+    "string-inner": {
+      "patterns": [
+        {
+          "match": ".",
+          "name": "string.quoted.triple.cmdb"
+        }
+      ]
     }
   }
 }
