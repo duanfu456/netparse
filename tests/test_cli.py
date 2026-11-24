@@ -101,12 +101,12 @@ check("--no-mask-heuristic 仍遮蔽 L1 字段", code == 0 and "******" in out a
 
 # ── ③ 兼容 shim ──────────────────────────────────────
 code, out, err = run_cli(["parse", TEMPLATE, FIXTURE])
-shim = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "probe_stack.py"),
+shim = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "probes-archive", "probe_stack.py"),
                        TEMPLATE, FIXTURE],
                       capture_output=True, text=True, cwd=ROOT)
 check("tools/probe_stack.py 仍可运行", shim.returncode == 0, shim.stderr[-300:])
 
-shim_lint = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "probe_stack.py"),
+shim_lint = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "probes-archive", "probe_stack.py"),
                             TEMPLATE, FIXTURE, "--lint"],
                            capture_output=True, text=True, cwd=ROOT)
 check("tools/probe_stack.py --lint 参数被翻译成 lint 子命令",

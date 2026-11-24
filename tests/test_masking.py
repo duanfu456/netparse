@@ -155,7 +155,7 @@ def run_cli(tpl_text, cfg_text, extra=()):
     tpl = write_tmp(tpl_text, ".cmdb")
     cfg = write_tmp(cfg_text, ".cfg")
     try:
-        cmd = [sys.executable, os.path.join(ROOT, "tools", "probe_stack.py"), tpl, cfg,
+        cmd = [sys.executable, os.path.join(ROOT, "tools", "probes-archive", "probe_stack.py"), tpl, cfg,
                "--json"] + list(extra)
         p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
         return p
