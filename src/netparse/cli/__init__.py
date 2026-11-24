@@ -61,6 +61,9 @@ def build_parser():
     p.add_argument("--json", action="store_true", help="输出完整 JSON（stdout 保持纯 JSON）")
     p.add_argument("--selftest", action="store_true",
                    help="只加载模板并执行 [__main__] 自测试段（不需要 config）")
+    p.add_argument("-t", "--test", nargs="?", const="all", default=None,
+                   metavar="NN[,NN]",
+                   help="跑 [__test__.NN] 测试段（默认全部；可指定 01,03）")
     p.add_argument("--mask-value", default=None, help="掩码串（默认 ******）")
     p.add_argument("--no-mask-heuristic", action="store_true",
                    help="关闭 L2 密文形态兜底，只保留模板 type(secret) 的精确遮蔽")

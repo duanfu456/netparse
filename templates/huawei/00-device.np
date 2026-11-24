@@ -15,3 +15,12 @@ Platform  type(str) reg(\S+) desc(设备型号)
 ^router id\s+${RouterId}\s*$
       -> Device{RouterId,MgmtIP=RouterId}
 ^[Ss]ysname\s+${SysName}\s*$
+
+[__test__.01]
+# title: 基础冒烟（sysname → Device.SysName）
+cfgstr = """
+sysname SMOKE-01
+#
+"""
+expect = |
+  Device[0].SysName = SMOKE-01

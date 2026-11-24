@@ -90,6 +90,13 @@ def main(args):
         # 取模板之后的参数（剔除已知 flag 开头的）
         i = rest.index(args.template) + 1 if args.template in rest else len(rest)
         main_argv = [a for a in rest[i:] if not a.startswith("-") and a != "--json" and a != "--selftest"]
+    # ── -t/--test：跑 [__test__.NN] 测试段（不执行 [__main__]）──
+    test_ids = getattr(args, "test", None)
+    if test_ids:
+        ids = None if test_ids == "all" else [x.strip() for x in test_ids.split(",") if x.strip()]
+        engine.parse_template(args.template, tests_only=True, test_ids=ids)
+        return 0
+
     colls = engine.parse_template(args.template, main_cfg=main_cfg, main_argv=main_argv)  # [__main__] 段在此执行
 
     # ── --selftest：只加载模板并执行 [__main__] 段，成功即 PASS ──

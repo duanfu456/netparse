@@ -154,3 +154,17 @@ def iface_type(value, record=None):
 | `secret` 加 `func=` | lint 错误（防凭据外泄） | 不加；脱敏引擎已兜底 |
 | 中兴模板抄华为的 `undo` | `no shutdown` 命中不了 | 开关词按厂商写（中兴是 `no`） |
 | 同名函数跨 `python_file` | 后加载覆盖前者 | lint 有警告；改名或合并文件 |
+
+## [__test__.NN] 独立测试段
+
+```text
+[__test__.01]
+cfgstr = """..."""
+expect = |
+  集合[0].字段 = 期望值
+```
+
+    netparse X.np -t          # 跑全部测试段
+    netparse X.np -t 01,03    # 只跑指定编号
+
+`[__main__]` 只放正式逻辑；测试段不带 `-t` 完全不执行（无残留副作用）。

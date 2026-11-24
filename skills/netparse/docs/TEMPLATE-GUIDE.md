@@ -1323,5 +1323,49 @@ print("[__main__]", _result)
 **模块化交互**：`main.np` 与各子模板都可带自己的 `[__main__]`；
 加载哪个文件就执行谁的段——单组调试时只跑本组冒烟。
 
+完整说明（注入对象/行为规则/常见错误对照）：`docs/__MAIN__-说明.md`。
+
 **实战**：华为单文件版与 `huawei/main.np` 尾部各带冒烟段
 （设备名/接口 Type/IpAddress/路由 NULL0 断言），每次加载自动验证。
+
+
+## 场景 20：独立测试段 [__test__.NN]
+
+正式逻辑与测试分离：`[__main__]` 只放正式逻辑（`if cfg` 真解析），
+测试放 `[__test__.NN]`（NN=编号），**每个测试段自带 cfgstr + expect，
+完全自包含**。
+
+```text
+[__main__]
+if cfg:
+    res = run_file(cfg)
+    print(res.to_json())
+
+[__test__.01]
+# title: 基础冒烟
+cfgstr = """
+sysname SMOKE-01
+#
+"""
+expect = |
+  Device[0].SysName = SMOKE-01
+
+[__test__.02]
+# title: 边界
+cfgstr = """
+sysname SPECIAL
+#
+"""
+expect = |
+  Device[0].SysName = SPECIAL
+```
+
+触发：
+
+    netparse Device.np            # 只跑 [__main__]，测试段零执行
+    netparse Device.np -t         # 跑全部测试段
+    netparse Device.np -t 01,03   # 只跑 01 和 03
+    netparse -m test 01           # 同义
+
+输出：`[PASS] 01 基础冒烟` / `[FAIL] 02: expect L1 ... 期望 X 实际 Y`，
+一段失败不影响其余，汇总后按是否存在 FAIL 退出。

@@ -149,3 +149,19 @@ print("[__main__] 外部样例通过:", len(res["Interfaces"]), "接口")
 | `段的语法错误` | Python 代码写错 | 修语法（段内是纯 Python） |
 | `缺少 main() 入口` 警告 | 段内定义了代码但无 `main()` | 补 `def main(colls, run):` 或改平铺 |
 | `--selftest` 后 JSON 输出带冒烟文本 | print 写到 stdout 了 | 确认用引擎注入的 `print`（自动走 stderr） |
+
+
+## [__test__.NN] 独立测试段（v0.9 新增，推荐）
+
+`[__main__]` 职责收敛为"程序化主逻辑"；测试放 `[__test__.NN]`：
+
+```text
+[__test__.01]
+cfgstr = """..."""
+expect = |
+  Device[0].SysName = SMOKE-01
+```
+
+- 每个测试段自带 cfgstr + expect，完全自包含
+- `netparse X.np` 不执行测试段（无残留）；`-t` 跑全部；`-t 01,03` 跑指定
+- 插件 CodeLens：每个测试段头有「▶ 运行测试 NN」

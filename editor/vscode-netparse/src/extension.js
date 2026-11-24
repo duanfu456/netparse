@@ -33,6 +33,8 @@ function activate(ctx) {
     ctx.subscriptions.push(vscode.commands.registerCommand(
         'netparse.runSelftest', () => runSelftest()));
     ctx.subscriptions.push(vscode.commands.registerCommand(
+        'netparse.runTestSection', (uri, id) => runTestSection(uri, id)));
+    ctx.subscriptions.push(vscode.commands.registerCommand(
         'netparse.exportSelftestJson', exportSelftestJson));
 }
 
@@ -243,6 +245,19 @@ module.exports = { activate, deactivate };
 class CmdbCodeLensProvider {
     provideCodeLenses(doc) {
         const lenses = [];
+        // [__test__.NN] 段头 CodeLens：运行该测试段
+        for (let i = 0; i < doc.lineCount; i++) {
+            const t = doc.lineAt(i).text.trim();
+            const m = t.match(/^\[__test__(?:\.(\d+))?\]$/i);
+            if (m) {
+                const id = m[1] || '00';
+                lenses.push(new vscode.CodeLens(
+                    new vscode.Range(i, 0, i, t.length),
+                    { title: '\u25B6 \u8fd0\u884c\u6d4b\u8bd5 ' + id,
+                      command: 'netparse.runTestSection',
+                      arguments: [doc.uri, id] }));
+            }
+        }
         let inMain = false;
         let mainLine = -1;
         for (let i = 0; i < doc.lineCount; i++) {
@@ -285,6 +300,29 @@ async function exportSelftestJson() {
     outChannel.show(true);
     outChannel.appendLine('[netparse] \u5b8c\u6574 JSON \u5df2\u5bfc\u51fa: ' + base);
     vscode.window.showInformationMessage('netparse \u5b8c\u6574 JSON \u5df2\u4fdd\u5b58: ' + base);
+}
+
+async function runTestSection(uri, id) {
+    const bin = enginePath();
+    if (!outChannel) outChannel = vscode.window.createOutputChannel('netparse');
+    outChannel.show(true);
+    const cwd = path.dirname(uri.fsPath);
+    outChannel.appendLine('[netparse] 运行测试段 ' + id + ': ' + uri.fsPath);
+    execFile(bin, ['parse', uri.fsPath, '-t', id],
+        { cwd, timeout: 60000, maxBuffer: 8 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+            if (stderr) outChannel.appendLine(stderr);
+            if (err) {
+                const msg = (err.message || '').split('\n')[0];
+                outChannel.appendLine('');
+                outChannel.appendLine('[FAIL] ' + msg);
+                vscode.window.showErrorMessage('netparse 测试段 ' + id + ' 失败: ' + msg);
+            } else {
+                outChannel.appendLine('');
+                outChannel.appendLine('[PASS] 测试段 ' + id + ' 全部通过');
+                vscode.window.showInformationMessage('netparse 测试段 ' + id + ' 通过');
+            }
+        });
 }
 
 async function runSelftest(uriArg) {

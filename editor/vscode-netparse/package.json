@@ -2,7 +2,7 @@
   "name": "netparse-cmdb",
   "displayName": "netparse CMDB Template",
   "description": "netparse .cmdb 模板语法高亮、自动补全与 lint 实时诊断",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "publisher": "netparse",
   "engines": {
     "vscode": "^1.60.0"

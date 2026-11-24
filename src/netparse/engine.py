@@ -240,7 +240,7 @@ def is_coll_decl(toks):
     return toks[1].startswith("type(")
 
 
-def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines, main_expect, main_expect_active,
+def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines, main_expect, main_tests, main_expect_active,
                          seen_paths, imported_names, importing_from=None):
     """解析单个模板文件（include/import 的递归工作体）。
 
@@ -264,6 +264,8 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines, main
     cur = None
     mode = None
     base_indent = None
+    cur_test_id = "00"
+    cur_test_lines = []
     pending = None
     field_stack = []
     section_coll = None
@@ -333,7 +335,7 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines, main
                 sel = None if "*" in names else set(names)
                 _sub_main = []   # 子模板的 [__main__] 收集后丢弃（只有入口文件执行）
                 _parse_template_file(sub, colls, py_file_lines, py_blocks,
-                                     _sub_main, [], [False], seen_paths, imported_names,
+                                     _sub_main, [], [], [False], seen_paths, imported_names,
                                      importing_from=sel)
                 continue
             if m_imp:
@@ -351,8 +353,25 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines, main
                         "%s: import 的模板不存在: %s" % (path, sub))
                 _sub_main = []   # 子模板的 [__main__] 收集后丢弃（只有入口文件执行）
                 _parse_template_file(sub, colls, py_file_lines, py_blocks,
-                                     _sub_main, [], [False], seen_paths, imported_names, None)
+                                     _sub_main, [], [], [False], seen_paths, imported_names, None)
                 continue
+
+        m_test = re.match(r"^\[__test__(?:\.(\d+))?\]$", low)
+        if m_test:
+            flush_pending()
+            if cur_py:
+                py_blocks.append("\n".join(cur_py))
+                cur_py = None
+            # 新测试段：收编当前已积累的测试段行
+            if cur_test_lines:
+                main_tests.append((cur_test_id, list(cur_test_lines)))
+                cur_test_lines = []
+            cur_test_id = m_test.group(1) or "00"
+            mode = "__test__"
+            section_coll = cur
+            base_indent = None
+            field_stack = []
+            continue
 
         if low in ("[value]", "[vlaue]", "[rule]", "[python]", "[python_file]", "[__main__]"):
             flush_pending()
@@ -408,6 +427,18 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines, main
             else:
                 py_file_lines.append(s)
                 continue
+        if mode == "__test__":
+            # 顶格集合声明行结束该段
+            if re.match(r"^[A-Z]\w*\s+type\(", s):
+                if cur_test_lines:
+                    main_tests.append((cur_test_id, list(cur_test_lines)))
+                    cur_test_lines = []
+                mode = None
+                # 落到下方段外分支正常处理集合声明
+            else:
+                cur_test_lines.append(s)
+                continue
+
         if mode == "__main__":
             # 顶格集合声明行结束该段（与 python_file 同规则）
             if re.match(r"^[A-Z]\w*\s+type\(", s):
@@ -524,21 +555,26 @@ def _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines, main
                 % (nm, imported_names[nm], tpath))
         imported_names[nm] = tpath
     seen_paths["on_stack"].discard(tpath)
+    # 文件尾：收编最后一个未闭合的测试段
+    if cur_test_lines:
+        main_tests.append((cur_test_id, list(cur_test_lines)))
+        cur_test_lines = []
     seen_paths["done"].add(tpath)
     return merged_names
 
 
-def parse_template(path, *, main_cfg=None, main_argv=None, skip_main=False):
+def parse_template(path, *, main_cfg=None, main_argv=None, skip_main=False, tests_only=False, test_ids=None):
     # main_cfg/main_argv：CLI 解释器模式透传给 [__main__] 段的 cfg/argv
     colls = []
     py_file_lines = []   # [python_file] 段的路径行（声明顺序）
     py_blocks = []       # [python] 段代码块（物理顺序，处理时统一按出现顺序执行）
     main_lines = []      # [__main__] 自测试段代码行
+    main_tests = []      # [__test__.NN] 独立测试段 [(编号, 行列表), ...]
     main_expect = []     # expect= | 块文本行（声明式断言）
     main_expect_active = [False]  # 可变容器（递归内层可改）
     seen_paths = {"on_stack": set(), "done": set()}
     imported_names = {}
-    _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines, main_expect, main_expect_active,
+    _parse_template_file(path, colls, py_file_lines, py_blocks, main_lines, main_expect, main_tests, main_expect_active,
                          seen_paths, imported_names, None)
     tpath = os.path.abspath(path)
 
@@ -650,7 +686,7 @@ def parse_template(path, *, main_cfg=None, main_argv=None, skip_main=False):
     # 注入：colls（裸列表）/ pt（模板对象，run 需要其 registry 属性）/
     #       run（引擎解析入口）/ here（模板目录）
     # 用户脚本从上到下执行；无异常 = 模板加载即自测通过
-    if main_lines and not skip_main:
+    if main_lines and not skip_main and not tests_only:
         code = "\n".join(main_lines)
         import io as _io
         _err = _sys.stderr
@@ -727,6 +763,94 @@ def parse_template(path, *, main_cfg=None, main_argv=None, skip_main=False):
                         % (path, lineno, fpath, want, actual)) from None
             if check_fn:
                 check_fn(results)
+
+    # ── [__test__.NN] 独立测试段（tests_only / test_ids 触发）──
+    # 说明：此块位于闭包定义之后，可直接使用 run/run_file/run_str 等单参自适应闭包
+    if main_tests and (tests_only or test_ids is not None):
+        wanted = set(test_ids or [])
+        results_all = []
+        import io as _io2
+        for tid, lines in sorted(main_tests, key=lambda x: x[0]):
+            if wanted and tid not in wanted:
+                continue
+            # 段内 expect=| 块摘出（非 Python 内容，不能进 exec）
+            code_lines, expect_lines, in_expect = [], [], False
+            title = ""
+            for ln in lines:
+                mm = re.match(r"\s*#\s*title://s*(.+)", ln)
+                if mm:
+                    title = mm.group(1).strip()
+                    continue
+                if in_expect:
+                    expect_lines.append(ln)
+                    continue
+                if ln.strip() == "expect = |" or ln.strip().startswith("expect=|"):
+                    in_expect = True
+                    continue
+                code_lines.append(ln)
+            code = "\n".join(code_lines)
+            expect_text = "\n".join(expect_lines) or None
+            _err2 = _sys.stderr
+
+            def _t_print(*a, **k):
+                k2 = dict(k)
+                k2["file"] = _err2
+                return print(*a, **k2)
+
+            tn = {"__name__": "_np_test_%s" % tid,
+                  "colls": None, "pt": None,
+                  "run": None, "run_file": None, "run_str": None,
+                  "run_files": None, "run_nq": None,
+                  "print": _t_print, "sys": _sys,
+                  "cfg": main_cfg, "argv": list(main_argv or []),
+                  "here": os.path.dirname(tpath)}
+            # run 系列使用与 [__main__] 相同的闭包（单参自适应 + pt 绑定）
+            tn["run"] = _run_compat
+            tn["run_file"] = run_file
+            tn["run_str"] = run_str
+            tn["run_files"] = run_files
+            tn["run_nq"] = run_file
+            fail = None
+            try:
+                exec(compile(code, "<%s [__test__.%s]>" % (path, tid), "exec"), tn)
+            except SystemExit as e:
+                fail = "exit(%s)" % e.code
+            except TemplateFileError as e:
+                fail = str(e)
+            except Exception as e:
+                fail = "%s: %s" % (type(e).__name__, e)
+            # 段内 expect 断言（cfgstr 来自段命名空间；expect=| 块已摘出）
+            if not fail and expect_text:
+                src_s = tn.get("cfgstr") or tn.get("cfgpath")
+                if not src_s:
+                    fail = "expect 有断言但段内无 cfgstr/cfgpath"
+                else:
+                    try:
+                        results = _run_compat(src_s)
+                        for lineno, fpath, want, actual in _run_expect(expect_text, results):
+                            fail = ("expect L%d %s: 期望 %r, 实际 %r"
+                                    % (lineno, fpath, want, actual))
+                            break
+                    except Exception as e:
+                        fail = "%s: %s" % (type(e).__name__, e)
+            if fail:
+                results_all.append((tid, title, False, fail))
+            else:
+                results_all.append((tid, title, True, ""))
+
+        # 汇总输出（stderr）并决定退出状态
+        n_fail = sum(1 for _, _, ok, _ in results_all if not ok)
+        for tid, title, ok, msg in results_all:
+            label = ("%s %s" % (tid, title)) if title else ("测试段 " + tid)
+            print("[PASS] %s" % label if ok else "[FAIL] %s: %s" % (label, msg),
+                  file=_sys.stderr)
+        print("---", file=_sys.stderr)
+        print("测试段: %d PASS / %d FAIL（共 %d）"
+              % (len(results_all) - n_fail, n_fail, len(results_all)),
+              file=_sys.stderr)
+        if n_fail:
+            raise TemplateFileError(
+                "%s: [__test__] %d 个测试段失败" % (path, n_fail))
 
     return pt
 
